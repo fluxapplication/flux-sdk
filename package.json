@@ -1,0 +1,8 @@
+{
+  "name": "flux-sdk",
+  "version": "1.0.0",
+  "description": "Public SDK for Flux extensions",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT"
+}
