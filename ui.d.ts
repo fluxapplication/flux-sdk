@@ -2,55 +2,47 @@
  * Flux Extension SDK — Frontend UI type declarations
  *
  * Import from "flux-sdk/ui".
+ *
+ * Extensions receive a ctx object as a prop — the ONLY way to access
+ * platform capabilities from the UI. No direct fetch() or localStorage.
  */
 
 import type { AiMessage, AiOptions } from "./index"
 
-// ─── useWorkspaceId ───────────────────────────────────────────────────────────
+// ─── Storage context ──────────────────────────────────────────────────────────
 
-/**
- * Returns the active workspace ID from the Flux session.
- * Re-renders when the workspace changes.
- */
-export declare const useWorkspaceId: () => string | null
-
-// ─── useExtensionStorage ──────────────────────────────────────────────────────
-
-export interface ExtensionStorageResult<T> {
-  data: T | null
-  isLoading: boolean
-  error: string | null
-  /** Persist a new value. Throws on failure. */
-  set: (value: unknown) => Promise<void>
-  /** Delete the key. Throws on failure. */
-  remove: () => Promise<void>
+export interface ExtensionStorageContext {
+  /** Retrieve a stored value by key. Returns null if not found. */
+  get<T = unknown>(key: string): Promise<T | null>
+  /** Store a value by key. */
+  set(key: string, value: unknown): Promise<void>
+  /** Delete a stored key. */
+  delete(key: string): Promise<void>
 }
 
-/**
- * Read/write a single key in extension storage (scoped to workspace).
- * Requires storage.read + storage.write permissions in manifest.
- *
- * @param extensionSlug  The slug from your manifest.json
- * @param key            Storage key
- */
-export declare const useExtensionStorage: <T = unknown>(
-  extensionSlug: string,
-  key: string,
-) => ExtensionStorageResult<T>
+// ─── AI context ───────────────────────────────────────────────────────────────
 
-// ─── useAiComplete ────────────────────────────────────────────────────────────
-
-export interface AiCompleteResult {
-  complete: (
+export interface ExtensionAiContext {
+  /** Send messages to the AI proxy. Requires ai.access permission. */
+  complete(
     messages: AiMessage[],
     options: Omit<AiOptions, "apiKey"> & { apiKey?: string },
-  ) => Promise<string>
-  isPending: boolean
-  error: string | null
+  ): Promise<string>
 }
 
-/**
- * Returns a `complete` function to call the AI proxy.
- * Requires ai.access permission in manifest.
- */
-export declare const useAiComplete: () => AiCompleteResult
+// ─── Extension UI context ─────────────────────────────────────────────────────
+
+export interface ExtensionUiContext {
+  /** The active workspace ID. */
+  readonly workspaceId: string
+  /** Storage API scoped to this extension and workspace. */
+  readonly storage: ExtensionStorageContext
+  /** AI completion proxy. */
+  readonly ai: ExtensionAiContext
+}
+
+// ─── Component props ──────────────────────────────────────────────────────────
+
+export interface ExtensionPanelProps {
+  ctx: ExtensionUiContext
+}
