@@ -9,6 +9,39 @@
 
 import type { AiMessage, AiOptions } from "./index"
 
+// ─── Message renderer ─────────────────────────────────────────────────────────
+
+/** Minimal message shape exposed to extension renderer components. */
+export interface ExtensionMessage {
+  id: string
+  content: string
+}
+
+/**
+ * Props passed to every message renderer component.
+ * Import as: `import type { MessageRendererProps } from "flux-sdk/ui"`
+ */
+export interface MessageRendererProps {
+  message: ExtensionMessage
+  /** Extension context — provides storage, workspaceId, channels, etc. */
+  ctx: ExtensionUiContext
+  /** ID of the currently authenticated user. Empty string if unauthenticated. */
+  currentUserId: string
+}
+
+/**
+ * Describes a single message renderer registered by an extension.
+ * Export as the `messageRenderers` array from your `renderers.ts` file.
+ */
+export interface RendererEntry {
+  /** Must match the extension's manifest slug. */
+  slug: string
+  /** Return true for any message content this renderer handles. */
+  match: (content: string) => boolean
+  /** A React function component (FC<MessageRendererProps>) that renders the message. */
+  component: (props: MessageRendererProps) => unknown
+}
+
 // ─── Storage context ──────────────────────────────────────────────────────────
 
 export interface ExtensionStorageContext {
