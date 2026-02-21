@@ -30,11 +30,25 @@ export interface ExtensionAiContext {
   ): Promise<string>
 }
 
+// ─── Channel ──────────────────────────────────────────────────────────────────
+
+export interface Channel {
+  id: string
+  name: string
+}
+
 // ─── Extension UI context ─────────────────────────────────────────────────────
 
 export interface ExtensionUiContext {
   /** The active workspace ID. */
   readonly workspaceId: string
+  /**
+   * Base URL of the Flux API server (no trailing slash).
+   * Use to construct webhook URLs: `${ctx.serverUrl}/webhooks/${slug}/${workspaceId}`
+   */
+  readonly serverUrl: string
+  /** All channels available in the active workspace. */
+  readonly channels: ReadonlyArray<Channel>
   /** Storage API scoped to this extension and workspace. */
   readonly storage: ExtensionStorageContext
   /** AI completion proxy. */

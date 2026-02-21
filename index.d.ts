@@ -15,7 +15,8 @@ export type ExtensionPermission =
   | "storage.read"
   | "storage.write"
   | "scheduler"
-  | "ai.access";
+  | "ai.access"
+  | "webhooks";
 
 // ─── Events ──────────────────────────────────────────────────────────────────
 
@@ -28,6 +29,25 @@ export interface MessageEvent {
 }
 
 export type MessageHandler = (event: MessageEvent) => Promise<void>;
+
+// ─── Webhook ──────────────────────────────────────────────────────────────────
+
+export interface WebhookEvent {
+  /**
+   * Incoming request headers, all keys lowercased.
+   * Example: event.headers["x-github-event"], event.headers["x-hub-signature-256"]
+   */
+  headers: Record<string, string>;
+  /** Parsed JSON payload. Cast to the expected shape per event type. */
+  body: unknown;
+  /**
+   * Raw UTF-8 request body string.
+   * Use for HMAC-SHA256 signature verification before trusting `body`.
+   */
+  rawBody: string;
+}
+
+export type WebhookHandler = (event: WebhookEvent) => Promise<void> | void;
 
 // ─── API surfaces ─────────────────────────────────────────────────────────────
 
@@ -101,6 +121,16 @@ export interface ExtensionAPI {
   onMessage(handler: MessageHandler): void;
 
   /**
+   * Register a handler for incoming webhook POST requests to this extension's endpoint.
+   * Endpoint: POST /webhooks/{extensionSlug}/{workspaceId}
+   *
+   * The platform delivers the raw request to the handler. The extension is responsible
+   * for verifying the signature using `event.rawBody` and a secret from its own storage.
+   * Requires webhooks permission.
+   */
+  onWebhook(handler: WebhookHandler): void;
+
+  /**
    * Register a recurring job using a cron expression.
    * The job persists as long as the extension is loaded.
    * Requires scheduler.
@@ -127,7 +157,7 @@ export interface ExtensionContext {
 export interface ExtensionDefinition {
   /**
    * Called once when the extension is loaded for a workspace.
-   * Register message handlers and schedules here.
+   * Register message handlers, webhook handlers, and schedules here.
    */
   onLoad?(ctx: ExtensionContext): void | Promise<void>;
 
