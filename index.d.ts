@@ -26,6 +26,8 @@ export interface MessageEvent {
   workspaceId: string;
   content: string;
   userId: string;
+  /** User IDs mentioned in the message via @mention (<@userId>) */
+  mentionIds: string[];
 }
 
 export type MessageHandler = (event: MessageEvent) => Promise<void>;
@@ -97,6 +99,7 @@ export interface ChannelMessage {
   id: string;
   content: string;
   userId: string;
+  mentionIds: string[];
   createdAt: Date;
   user: { id: string; name: string };
 }
