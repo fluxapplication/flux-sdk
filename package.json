@@ -17,5 +17,8 @@
   "peerDependencies": {
     "react": ">=18"
   },
+  "bin": {
+    "flux-sandbox": "./sandbox/bin.mjs"
+  },
   "license": "MIT"
 }
