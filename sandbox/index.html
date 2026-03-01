@@ -66,6 +66,19 @@
             word-break: break-word;
         }
 
+        .message .text .mention {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 6px;
+            border-radius: 6px;
+            background: rgba(139, 92, 246, 0.25);
+            color: #c4b5fd;
+            font-weight: 500;
+            font-size: 13px;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            margin: 0 2px;
+        }
+
         #input-area {
             padding: 16px;
             background: #222;
@@ -74,7 +87,7 @@
             gap: 8px;
         }
 
-        input {
+        #msg-input {
             flex: 1;
             padding: 12px;
             border-radius: 6px;
@@ -82,6 +95,68 @@
             background: #111;
             color: white;
             outline: none;
+            min-height: 20px;
+            max-height: 120px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        #msg-input:empty::before {
+            content: attr(data-placeholder);
+            color: #666;
+            pointer-events: none;
+        }
+
+        #msg-input .mention-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0 4px;
+            border-radius: 6px;
+            background: rgba(139, 92, 246, 0.25);
+            color: #c4b5fd;
+            font-weight: 500;
+            font-size: 13px;
+            border: 1px solid rgba(139, 92, 246, 0.3);
+            margin: 0 2px;
+            user-select: all;
+        }
+
+        #mention-picker {
+            position: absolute;
+            bottom: 80px;
+            left: 16px;
+            width: 280px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            display: none;
+            flex-direction: column;
+            z-index: 100;
+            overflow: hidden;
+        }
+
+        #mention-picker.visible {
+            display: flex;
+        }
+
+        .picker-item {
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            border-bottom: 1px solid #333;
+        }
+
+        .picker-item:last-child {
+            border-bottom: none;
+        }
+
+        .picker-item:hover,
+        .picker-item.active {
+            background: #333;
         }
 
         #input-area button {
@@ -161,10 +236,12 @@
         <button class="tab-btn active" data-target="chat-content">Chat</button>
         <button class="tab-btn" data-target="ui-mount">App UI</button>
         <button class="tab-btn" data-target="settings-mount">App Settings</button>
+        <button class="tab-btn" data-target="dev-mount"
+            class="text-blue-400 border-l ml-2 pl-2 border-gray-600">Dev</button>
     </div>
 
     <!-- Chat Tab -->
-    <div id="chat-content" class="tab-content active">
+    <div id="chat-content" class="tab-content active" style="position: relative;">
         <div id="chat">
             <div class="message bot">
                 <div class="sender">Sandbox System</div>
@@ -173,8 +250,10 @@
                     onMessage handler.</div>
             </div>
         </div>
+        <div id="mention-picker"></div>
         <div id="input-area">
-            <input type="text" id="msg-input" placeholder="Type a message to the channel..." autocomplete="off" />
+            <div id="msg-input" contenteditable="true" role="textbox"
+                data-placeholder="Type a message to the channel..."></div>
             <button id="send-btn">Send</button>
         </div>
     </div>
@@ -185,9 +264,48 @@
     <!-- Settings UI Tab -->
     <div id="settings-mount" class="tab-content"></div>
 
+    <!-- Dev UI Tab -->
+    <div id="dev-mount" class="tab-content" style="padding: 16px; gap: 24px; overflow-y: auto;">
+        <div>
+            <h3 class="text-xl font-bold mb-4">Current User Selector</h3>
+            <div class="flex items-center gap-4">
+                <select id="current-user-select"
+                    class="bg-[#222] border border-[#333] text-white p-2 rounded w-64"></select>
+                <span class="text-sm opacity-70">Changes the user sending messages and 'currentUserId' in ctx</span>
+            </div>
+        </div>
+        <div>
+            <h3 class="text-xl font-bold mb-4">Sandbox Storage</h3>
+            <textarea id="storage-json" rows="10"
+                class="w-full bg-[#222] border border-[#333] text-white p-4 font-mono rounded"
+                spellcheck="false"></textarea>
+            <div class="mt-2 flex gap-4">
+                <button id="refresh-storage-btn"
+                    class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-bold">Refresh
+                    Storage</button>
+                <button id="save-storage-btn"
+                    class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded font-bold">Save Storage</button>
+            </div>
+        </div>
+        <div>
+            <h3 class="text-xl font-bold mb-4">Users Manager</h3>
+            <div id="users-list" class="flex flex-col gap-2 mb-4"></div>
+            <div class="flex gap-2 bg-[#222] p-4 rounded border border-[#333] items-center">
+                <input type="text" id="new-user-name" placeholder="New User Name"
+                    class="flex-1 bg-[#111] border border-[#444] p-2 rounded" />
+                <input type="text" id="new-user-avatar" placeholder="Avatar URL (optional)"
+                    class="flex-1 bg-[#111] border border-[#444] p-2 rounded" />
+                <button id="add-user-btn"
+                    class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded font-bold">Add User</button>
+            </div>
+        </div>
+    </div>
+
     <!-- React dependencies for extension UI -->
     <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/lucide-react@0.330.0/dist/umd/lucide-react.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
 
     <!-- Provide a require shim for esbuild's external references -->
     <script>
@@ -202,11 +320,42 @@
                 };
             }
             if (mod === 'lucide-react') {
-                return window.lucide || new Proxy({}, {
+                return new Proxy({}, {
                     get: function (target, prop) {
                         if (prop === '__esModule') return true;
-                        return function () {
-                            return window.React.createElement('span', { style: { fontSize: '10px', color: '#888' } }, `[${prop}]`);
+
+                        return function (props) {
+                            if (window.LucideReact && window.LucideReact[prop]) {
+                                return window.React.createElement(window.LucideReact[prop], props);
+                            }
+
+                            const iconName = prop;
+                            if (window.lucide && window.lucide.icons && window.lucide.icons[iconName]) {
+                                const reactAttrs = { ...props };
+                                // Lucide createElement expects DOM elements, but we can just use dangerouslySetInnerHTML 
+                                // using string rendering. Even simpler:
+                                const iconSvg = window.lucide.icons[iconName];
+                                // iconSvg is an Array format: ['svg', {attrs}, [children]] in recent versions.
+                                return window.React.createElement('span', {
+                                    ...props,
+                                    ref: (el) => {
+                                        if (el && !el.hasChildNodes()) {
+                                            const iconElement = window.lucide.createElement(iconSvg);
+                                            iconElement.setAttribute('class', `lucide lucide-${iconName} ${props.className || ''}`.trim());
+                                            if (props.size) {
+                                                iconElement.setAttribute('width', props.size);
+                                                iconElement.setAttribute('height', props.size);
+                                            }
+                                            if (props.color) {
+                                                iconElement.setAttribute('stroke', props.color);
+                                            }
+                                            el.appendChild(iconElement);
+                                        }
+                                    }
+                                });
+                            }
+
+                            return window.React.createElement('span', { className: props?.className, style: { fontSize: '10px', color: '#888' } }, `[${prop}]`);
                         };
                     }
                 });
@@ -253,11 +402,30 @@
             let htmlInner = `<div class="sender">${sender}</div>`;
             const textDiv = document.createElement('div');
             textDiv.className = 'text';
-            textDiv.textContent = text;
+
+            let lastIndex = 0;
+            const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
+            let m;
+            while ((m = MENTION_PATTERN.exec(text)) !== null) {
+                if (m.index > lastIndex) {
+                    textDiv.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
+                }
+                const mentionSpan = document.createElement('span');
+                mentionSpan.className = 'mention';
+                const user = sandboxUsers.find(u => u.id === m[1]);
+                mentionSpan.textContent = user ? `@${user.name}` : `@${m[1]}`;
+                textDiv.appendChild(mentionSpan);
+                lastIndex = m.index + m[0].length;
+            }
+            if (lastIndex < text.length) {
+                textDiv.appendChild(document.createTextNode(text.slice(lastIndex)));
+            }
+
             div.innerHTML = htmlInner;
             div.appendChild(textDiv);
             chat.appendChild(div);
-            chat.scrollTop = chat.scrollHeight;
+            // using setTimeout to ensure layout happens before scroll
+            setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 10);
         }
 
         // SSE for bot messages
@@ -267,16 +435,175 @@
             appendMessage(msg.user.name, msg.content, true);
         };
 
+        // Mention Picker Logic
+        const mentionPicker = document.getElementById('mention-picker');
+        let pickerVisible = false;
+        let pickerQuery = '';
+        let pickerIndex = 0;
+        let filteredMembers = [];
+        let mentionRange = null;
+
+        function updateMentionPicker() {
+            if (!pickerVisible || filteredMembers.length === 0) {
+                mentionPicker.classList.remove('visible');
+                return;
+            }
+            mentionPicker.innerHTML = '';
+            filteredMembers.forEach((m, i) => {
+                const div = document.createElement('div');
+                div.className = `picker-item ${i === pickerIndex ? 'active' : ''}`;
+                div.innerHTML = `
+                    <div style="background-image: url(${m.avatarUrl}); background-size: cover; width: 24px; height: 24px; border-radius: 50%;"></div>
+                    <div class="flex-1 font-bold text-sm text-zinc-200">${m.name}</div>
+                `;
+                div.addEventListener('mousedown', (e) => {
+                    e.preventDefault();
+                    insertMention(m);
+                });
+                mentionPicker.appendChild(div);
+            });
+            mentionPicker.classList.add('visible');
+        }
+
+        function insertMention(user) {
+            if (!mentionRange) return;
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(mentionRange);
+
+            // Delete the '@query'
+            mentionRange.deleteContents();
+
+            // Insert chip
+            const chip = document.createElement('span');
+            chip.className = 'mention-chip';
+            chip.contentEditable = 'false';
+            chip.setAttribute('data-user-id', user.id);
+            chip.textContent = `@${user.name}`;
+            mentionRange.insertNode(chip);
+
+            // Move cursor after chip
+            mentionRange.setStartAfter(chip);
+            mentionRange.collapse(true);
+            const space = document.createTextNode('\u200B ')
+            mentionRange.insertNode(space);
+            mentionRange.setStartAfter(space);
+            mentionRange.collapse(true);
+
+            sel.removeAllRanges();
+            sel.addRange(mentionRange);
+
+            pickerVisible = false;
+            updateMentionPicker();
+            input.focus();
+        }
+
+        function getCaretBoundary() {
+            const sel = window.getSelection();
+            if (!sel.rangeCount) return null;
+            const range = sel.getRangeAt(0);
+            if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) {
+                const text = range.commonAncestorContainer.textContent.substring(0, range.endOffset);
+                const lastAt = text.lastIndexOf('@');
+                if (lastAt === -1) return null;
+                const charBefore = lastAt > 0 ? text[lastAt - 1] : ' ';
+                if (charBefore !== ' ' && charBefore !== '\n') return null;
+
+                const afterAt = text.slice(lastAt + 1);
+                // In flux-fe, the query stops at the first space, so you can type "@Mock User" but the query is "Mock"
+                const spaceIdx = afterAt.search(/\s/);
+                const query = spaceIdx === -1 ? afterAt : afterAt.slice(0, spaceIdx);
+
+                const r = range.cloneRange();
+                r.setStart(range.commonAncestorContainer, lastAt);
+                r.setEnd(range.commonAncestorContainer, range.endOffset);
+                return { query: query, range: r };
+            }
+            return null;
+        }
+
+        input.addEventListener('input', () => {
+            const boundary = getCaretBoundary();
+            if (boundary) {
+                pickerQuery = boundary.query.toLowerCase();
+                filteredMembers = sandboxUsers.filter(u => u && u.name && u.name.toLowerCase().includes(pickerQuery));
+                pickerVisible = true;
+                pickerIndex = 0;
+                mentionRange = boundary.range;
+            } else {
+                pickerVisible = false;
+            }
+            updateMentionPicker();
+        });
+
+        input.addEventListener('keydown', e => {
+            if (pickerVisible) {
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    pickerIndex = (pickerIndex + 1) % filteredMembers.length;
+                    updateMentionPicker();
+                    return;
+                }
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    pickerIndex = (pickerIndex - 1 + filteredMembers.length) % filteredMembers.length;
+                    updateMentionPicker();
+                    return;
+                }
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (filteredMembers[pickerIndex]) {
+                        insertMention(filteredMembers[pickerIndex]);
+                    }
+                    return;
+                }
+                if (e.key === 'Escape') {
+                    e.preventDefault();
+                    pickerVisible = false;
+                    updateMentionPicker();
+                    return;
+                }
+            }
+
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        function serializeInput() {
+            let out = "";
+            const walk = (node) => {
+                if (node.nodeType === Node.TEXT_NODE) {
+                    out += node.textContent.replace(/\u200B/g, "");
+                    return;
+                }
+                if (node.nodeType === Node.ELEMENT_NODE) {
+                    if (node.tagName === "BR") { out += "\n"; return; }
+                    if (node.tagName === "DIV" && out.length > 0) { out += "\n"; }
+                    if (node.getAttribute("contenteditable") === "false" && node.hasAttribute("data-user-id")) {
+                        out += `<@${node.getAttribute("data-user-id")}>`;
+                        return;
+                    }
+                    node.childNodes.forEach(walk);
+                }
+            };
+            input.childNodes.forEach(walk);
+            return out;
+        }
+
         async function sendMessage() {
-            const text = input.value.trim();
-            if (!text) return;
-            input.value = '';
-            appendMessage('You', text, false);
+            const finalContent = serializeInput().trim();
+            if (!finalContent) return;
+            input.innerHTML = '';
+
+            const sender = sandboxUsers.find(u => u.id === currentSandboxUserId) || { name: 'You' };
+            appendMessage(sender.name, finalContent, false);
 
             await fetch('/api/messages', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: text })
+                body: JSON.stringify({ content: finalContent, userId: currentSandboxUserId })
             });
         }
 
@@ -297,6 +624,7 @@
                 { id: 'C_SANDBOX_2', name: 'dev-team' }
             ],
             serverUrl: `http://${window.location.host}`,
+            users: [], // populated later
             storage: {
                 get: async (key) => {
                     const res = await fetch('/api/storage?key=' + encodeURIComponent(key));
@@ -322,6 +650,8 @@
         let appMounted = false;
         let settingsMounted = false;
 
+        let currentSandboxUserId = 'user-1';
+
         const tryMount = () => {
             if (window.__FluxExtension__) {
                 const ext = window.__FluxExtension__.default || window.__FluxExtension__;
@@ -329,7 +659,7 @@
                 if (ext.ExtensionPage && !appMounted) {
                     const uiMount = document.getElementById('ui-mount');
                     const root = ReactDOM.createRoot(uiMount);
-                    root.render(React.createElement(ext.ExtensionPage, { ctx: frontendCtx, currentUserId: 'user-1' }));
+                    root.render(React.createElement(ext.ExtensionPage, { ctx: frontendCtx, currentUserId: currentSandboxUserId }));
                     appMounted = true;
                     console.log("[Sandbox] Mounted ExtensionPage");
                 }
@@ -338,7 +668,7 @@
                     const settingsMount = document.getElementById('settings-mount');
                     if (settingsMount) {
                         const root = ReactDOM.createRoot(settingsMount);
-                        root.render(React.createElement(ext.ExtensionPanel, { ctx: frontendCtx, currentUserId: 'user-1' }));
+                        root.render(React.createElement(ext.ExtensionPanel, { ctx: frontendCtx, currentUserId: currentSandboxUserId }));
                         settingsMounted = true;
                         console.log("[Sandbox] Mounted ExtensionPanel");
                     }
@@ -351,8 +681,118 @@
             }
         };
 
+        const reRenderApp = () => {
+            if (window.__FluxExtension__) {
+                const ext = window.__FluxExtension__.default || window.__FluxExtension__;
+                if (ext.ExtensionPage && appMounted) {
+                    const uiMount = document.getElementById('ui-mount');
+                    const root = ReactDOM.createRoot(uiMount);
+                    root.render(React.createElement(ext.ExtensionPage, { ctx: frontendCtx, currentUserId: currentSandboxUserId }));
+                }
+                if (ext.ExtensionPanel && settingsMounted) {
+                    const settingsMount = document.getElementById('settings-mount');
+                    const root = ReactDOM.createRoot(settingsMount);
+                    root.render(React.createElement(ext.ExtensionPanel, { ctx: frontendCtx, currentUserId: currentSandboxUserId }));
+                }
+            }
+        };
+
+        // Dev tab logic
+        let sandboxUsers = [];
+
+        async function fetchUsers() {
+            const res = await fetch('/api/users');
+            sandboxUsers = await res.json();
+            frontendCtx.users = sandboxUsers;
+            renderUsers();
+            renderUserSelect();
+        }
+
+        async function refreshStorage() {
+            const res = await fetch('/api/storage/all');
+            const data = await res.json();
+            document.getElementById('storage-json').value = JSON.stringify(data, null, 2);
+        }
+
+        async function saveStorage() {
+            try {
+                const data = JSON.parse(document.getElementById('storage-json').value);
+                await fetch('/api/storage/all', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                alert('Storage saved successfully!');
+            } catch (e) {
+                alert('Invalid JSON');
+            }
+        }
+
+        async function deleteUser(id) {
+            await fetch('/api/users?id=' + encodeURIComponent(id), { method: 'DELETE' });
+            await fetchUsers();
+        }
+
+        async function addUser() {
+            const name = document.getElementById('new-user-name').value.trim();
+            const avatarUrl = document.getElementById('new-user-avatar').value.trim();
+            if (!name) return;
+            await fetch('/api/users', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, avatarUrl })
+            });
+            document.getElementById('new-user-name').value = '';
+            document.getElementById('new-user-avatar').value = '';
+            await fetchUsers();
+        }
+
+        function renderUserSelect() {
+            const select = document.getElementById('current-user-select');
+            select.innerHTML = '';
+            sandboxUsers.forEach(u => {
+                const opt = document.createElement('option');
+                opt.value = u.id;
+                opt.textContent = `${u.name} (${u.id})`;
+                if (u.id === currentSandboxUserId) opt.selected = true;
+                select.appendChild(opt);
+            });
+        }
+
+        function renderUsers() {
+            const list = document.getElementById('users-list');
+            list.innerHTML = '';
+            sandboxUsers.forEach(u => {
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-4 bg-[#111] p-3 rounded border border-[#333]';
+                div.innerHTML = `
+                    <div style="background-image: url(${u.avatarUrl}); background-size: cover; width: 32px; height: 32px; border-radius: 50%;"></div>
+                    <div class="flex-1">
+                        <div class="font-bold">${u.name}</div>
+                        <div class="text-xs opacity-50">${u.id}</div>
+                    </div>
+                    <button class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-sm delete-user-btn" data-id="${u.id}">Delete</button>
+                `;
+                list.appendChild(div);
+            });
+            document.querySelectorAll('.delete-user-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => deleteUser(e.target.getAttribute('data-id')));
+            });
+        }
+
+        document.getElementById('refresh-storage-btn').addEventListener('click', refreshStorage);
+        document.getElementById('save-storage-btn').addEventListener('click', saveStorage);
+        document.getElementById('add-user-btn').addEventListener('click', addUser);
+        document.getElementById('current-user-select').addEventListener('change', (e) => {
+            currentSandboxUserId = e.target.value;
+            reRenderApp();
+        });
+
         script.onload = () => {
-            tryMount();
+            fetchUsers().then(() => {
+                tryMount();
+            });
+            refreshStorage();
         };
         document.body.appendChild(script);
 

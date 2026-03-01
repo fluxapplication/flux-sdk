@@ -36,6 +36,16 @@ export async function startServer(port, extensionDir) {
   const clients = new Set(); // For SSE to the UI
   const messages = []; // In-memory history
 
+  // Mock Users
+  let users = Array.from({ length: 10 }).map((_, i) => ({
+    id: `user-${i + 1}`,
+    name: `Mock User ${i + 1}`,
+    avatarUrl: `https://i.pravatar.cc/150?u=user-${i + 1}`
+  }));
+
+  // Ensure current user is selected in UI
+  let currentUserId = 'user-1';
+
   // Mocked Context
   let messageHandler = null;
   const ctx = {
@@ -59,12 +69,20 @@ export async function startServer(port, extensionDir) {
       },
       sendMessage: async (channelId, content) => {
         console.log(`[Sandbox] Extension sent message to ${channelId}: ${content}`);
+        
+        const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
+        const mentionIds = [];
+        let m;
+        while ((m = MENTION_PATTERN.exec(content)) !== null) {
+          if (!mentionIds.includes(m[1])) mentionIds.push(m[1]);
+        }
+
         const msg = {
           id: `msg-${Date.now()}`,
           channelId,
           content,
           userId: 'ext-bot',
-          mentionIds: [],
+          mentionIds,
           createdAt: new Date(),
           user: { id: 'ext-bot', name: manifest.name || 'Extension' }
         };
@@ -77,6 +95,7 @@ export async function startServer(port, extensionDir) {
       getMessages: async (channelId, limit = 50) => {
          return messages.slice(-limit);
       },
+      getUsers: async () => users,
       onMessage: (handler) => {
         messageHandler = handler;
       },
@@ -143,15 +162,24 @@ export async function startServer(port, extensionDir) {
       req.on('end', async () => {
         const data = JSON.parse(body);
         if (messageHandler) {
+          const sender = users.find(u => u.id === data.userId) || { id: data.userId, name: 'You' };
+          
+          const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
+          const mentionIds = [];
+          let m;
+          while ((m = MENTION_PATTERN.exec(data.content)) !== null) {
+            if (!mentionIds.includes(m[1])) mentionIds.push(m[1]);
+          }
+
           const event = {
             id: `msg-${Date.now()}`,
             channelId: 'sandbox-channel',
             workspaceId: 'sandbox-workspace',
             content: data.content,
-            userId: 'user-1',
-            mentionIds: []
+            userId: data.userId,
+            mentionIds: [...new Set([...(data.mentionIds || []), ...mentionIds])]
           };
-          messages.push({ ...event, user: { id: event.userId, name: 'You' } }); // add to history too
+          messages.push({ ...event, user: sender }); // add to history too
           try {
             await messageHandler(event);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -187,6 +215,80 @@ export async function startServer(port, extensionDir) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       });
+      return;
+    }
+
+    if (url.pathname === '/api/storage/all' && req.method === 'GET') {
+      const data = {};
+      for (const [k, v] of storage.entries()) data[k] = v;
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(data));
+      return;
+    }
+
+    if (url.pathname === '/api/storage/all' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const data = JSON.parse(body);
+          storage.clear();
+          for (const [k, v] of Object.entries(data)) {
+            storage.set(k, v);
+          }
+          persistStorage();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch(e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+        }
+      });
+      return;
+    }
+
+    // Users API
+    if (url.pathname === '/api/users' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(users));
+      return;
+    }
+
+    if (url.pathname === '/api/users' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const newUser = JSON.parse(body);
+          if (newUser.id) {
+            // Update existing
+            const idx = users.findIndex(u => u.id === newUser.id);
+            if (idx >= 0) {
+              users[idx] = { ...users[idx], ...newUser };
+            } else {
+              users.push(newUser);
+            }
+          } else {
+            // Create new
+            newUser.id = `user-${Date.now()}`;
+            if (!newUser.avatarUrl) newUser.avatarUrl = `https://i.pravatar.cc/150?u=${newUser.id}`;
+            users.push(newUser);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(newUser));
+        } catch(e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+        }
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/users' && req.method === 'DELETE') {
+      const id = url.searchParams.get('id');
+      users = users.filter(u => u.id !== id);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
       return;
     }
 
