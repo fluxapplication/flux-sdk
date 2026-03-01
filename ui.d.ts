@@ -86,6 +86,8 @@ export interface ExtensionUiContext {
   readonly storage: ExtensionStorageContext
   /** AI completion proxy. */
   readonly ai: ExtensionAiContext
+  /** Get a user's display name by their ID. */
+  getUserNameById(userId: string): Promise<string | null>
 }
 
 // ─── Component props ──────────────────────────────────────────────────────────

@@ -644,6 +644,10 @@
                     });
                 },
                 listKeys: async () => []
+            },
+            getUserNameById: async (userId) => {
+                const u = frontendCtx.users.find(u => u.id === userId);
+                return u ? u.name : null;
             }
         };
 
