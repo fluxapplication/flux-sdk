@@ -37,7 +37,7 @@ export async function startServer(port, extensionDir) {
   const messages = []; // In-memory history
 
   // Mock Users
-  let users = Array.from({ length: 10 }).map((_, i) => ({
+  let users = Array.from({ length: 3 }).map((_, i) => ({
     id: `user-${i + 1}`,
     name: `Mock User ${i + 1}`,
     avatarUrl: `https://i.pravatar.cc/150?u=user-${i + 1}`

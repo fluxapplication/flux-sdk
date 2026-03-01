@@ -120,6 +120,9 @@ export interface ExtensionAPI {
   /** Fetch the last N messages from a channel. Requires messages.read. */
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
 
+  /** Get a user's display name by their ID. */
+  getUserNameById(userId: string): Promise<string | null>;
+
   /** Listen to new messages in this workspace. Requires messages.read. */
   onMessage(handler: MessageHandler): void;
 
