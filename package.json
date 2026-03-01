@@ -18,7 +18,11 @@
     "react": ">=18"
   },
   "bin": {
-    "flux-sandbox": "./sandbox/bin.mjs"
+    "flux-sandbox": "./sandbox/bin.mjs",
+    "flux-build": "./bin/build.mjs"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "esbuild": "^0.27.3"
+  }
 }

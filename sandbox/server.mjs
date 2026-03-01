@@ -105,26 +105,55 @@ export async function startServer(port, extensionDir) {
     }
   };
 
-  // Load backend execution if it exists
-  const backendPath = path.join(extensionDir, 'dist', 'backend.js');
-  if (fs.existsSync(backendPath)) {
-    console.log(`[Sandbox] Loading backend code from ${backendPath}...`);
-    try {
-      // Adding a query string to bust import cache if reloading
-      const extModule = await import(new URL(`file://${backendPath}?t=${Date.now()}`));
-      const ext = extModule.extension || extModule.default?.extension || extModule.default;
-      if (ext && ext.onLoad) {
-        await ext.onLoad(ctx);
-        console.log(`[Sandbox] Extension backend onLoad complete.`);
-      } else {
-        console.log(`[Sandbox] Warning: Extension format not recognized. Make sure to export an 'extension' object.`);
+  const loadBackend = async () => {
+    const backendPath = path.join(extensionDir, 'dist', 'backend.js');
+    if (fs.existsSync(backendPath)) {
+      console.log(`[Sandbox] Loading backend code from ${backendPath}...`);
+      try {
+        messageHandler = null; // Clear old handler
+        // Adding a query string to bust import cache if reloading
+        const extModule = await import(new URL(`file://${backendPath}?t=${Date.now()}`));
+        const ext = extModule.extension || extModule.default?.extension || extModule.default;
+        if (ext && ext.onLoad) {
+          await ext.onLoad(ctx);
+          console.log(`[Sandbox] Extension backend onLoad complete.`);
+        } else {
+          console.log(`[Sandbox] Warning: Extension format not recognized. Make sure to export an 'extension' object.`);
+        }
+      } catch (e) {
+        console.error(`[Sandbox] Failed to load backend.js:`, e);
       }
-    } catch (e) {
-      console.error(`[Sandbox] Failed to load backend.js:`, e);
+    } else {
+      console.log(`[Sandbox] No backend.js found. Frontend-only extension?`);
     }
-  } else {
-    console.log(`[Sandbox] No backend.js found. Frontend-only extension?`);
+  };
+
+  await loadBackend();
+
+  // Watch for changes in dist folder
+  const distDir = path.join(extensionDir, 'dist');
+  if (!fs.existsSync(distDir)) {
+    fs.mkdirSync(distDir, { recursive: true });
   }
+
+  let watchTimeout = null;
+  fs.watch(distDir, (eventType, filename) => {
+    if (!filename) return;
+
+    // Debounce events
+    if (watchTimeout) clearTimeout(watchTimeout);
+    watchTimeout = setTimeout(async () => {
+      if (filename === 'backend.js') {
+        console.log(`[Sandbox] Detected backend change, reloading...`);
+        await loadBackend();
+      } else if (filename === 'bundle.js' || filename === 'manifest.json') {
+        console.log(`[Sandbox] Detected frontend change, triggering browser reload...`);
+        for (const client of clients) {
+          client.res.write(`data: ${JSON.stringify({ type: 'reload' })}\n\n`);
+        }
+      }
+    }, 200);
+  });
 
     // Create HTTP server
   const server = http.createServer((req, res) => {

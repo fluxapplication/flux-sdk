@@ -440,10 +440,15 @@
             setTimeout(() => { chat.scrollTop = chat.scrollHeight; }, 10);
         }
 
-        // SSE for bot messages
+        // SSE for bot messages and hot reload
         const events = new EventSource('/api/events');
         events.onmessage = (e) => {
             const msg = JSON.parse(e.data);
+            if (msg.type === 'reload') {
+                console.log("[Sandbox] Hot reload triggered...");
+                window.location.reload();
+                return;
+            }
             appendMessage(msg.user.name, msg.content, true);
         };
 
