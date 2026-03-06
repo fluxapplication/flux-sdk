@@ -117,6 +117,9 @@ export interface ExtensionAPI {
   /** Post a message to a channel as this extension's bot user. Requires messages.write. */
   sendMessage(channelId: string, content: string): Promise<void>;
 
+  /** Send a direct message to a user by their ID. Requires messages.write. */
+  sendDirectMessage(userId: string, content: string): Promise<void>;
+
   /** Fetch the last N messages from a channel. Requires messages.read. */
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
 

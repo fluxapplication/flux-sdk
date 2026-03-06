@@ -100,6 +100,16 @@
                 </svg>
                 Users
             </div>
+            <div class="nav-item" data-target="dms-mount">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                    stroke-linejoin="round" class="w-4 h-4 flex-shrink-0">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    <circle cx="7" cy="12" r="1.5" fill="currentColor" />
+                    <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+                    <circle cx="17" cy="12" r="1.5" fill="currentColor" />
+                </svg>
+                DMs
+            </div>
         </div>
     </div>
 
@@ -194,6 +204,31 @@
                                 class="flex-1 px-3 py-2 bg-sb-primary border border-sb-border rounded-lg text-sb-text-primary text-sm outline-none focus:border-sb-accent" />
                             <button id="add-user-btn" class="btn-accent text-xs">+ Add</button>
                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- DMs Tab -->
+        <div id="dms-mount" class="tab-content">
+            <div class="flex-1 overflow-y-auto p-6 flex flex-col gap-5 scrollbar-thin">
+                <div class="flex items-center justify-between flex-shrink-0">
+                    <h2 class="text-lg font-bold flex items-center gap-2">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                            stroke-linejoin="round" class="w-5 h-5 text-sb-accent">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                        Direct Messages
+                    </h2>
+                    <button id="refresh-dms-btn" class="btn-blue text-xs">↻ Refresh</button>
+                </div>
+
+                <div class="bg-sb-secondary border border-sb-border rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-sb-border">
+                        <div class="text-sm font-semibold text-sb-text-secondary">Messages sent by extension</div>
+                    </div>
+                    <div id="dms-list" class="flex flex-col divide-y divide-sb-border max-h-[500px] overflow-y-auto">
+                        <div class="p-8 text-center text-sb-text-muted text-sm">No direct messages yet</div>
                     </div>
                 </div>
             </div>

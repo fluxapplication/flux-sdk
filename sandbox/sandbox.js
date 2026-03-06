@@ -70,6 +70,10 @@ const events = new EventSource('/api/events');
 events.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === 'reload') { window.location.reload(); return; }
+    if (msg.type === 'dm:created') { 
+        loadDirectMessages();
+        return; 
+    }
     appendMessage(msg.user.name, msg.content, true);
 };
 
@@ -393,10 +397,72 @@ function renderUsers() {
     });
 }
 
+/* ── Dev: DMs ── */
+async function loadDirectMessages() {
+    const res = await fetch('/api/direct-messages?limit=100');
+    const dms = await res.json();
+    renderDirectMessages(dms);
+}
+
+function renderDirectMessages(dms) {
+    const list = document.getElementById('dms-list');
+    if (!list) return;
+    
+    if (dms.length === 0) {
+        list.innerHTML = '<div class="p-8 text-center text-sb-text-muted text-sm">No direct messages yet</div>';
+        return;
+    }
+    
+    function formatMentions(text) {
+        const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
+        let lastIndex = 0;
+        const result = [];
+        let m;
+        while ((m = MENTION_PATTERN.exec(text)) !== null) {
+            if (m.index > lastIndex) result.push(text.slice(lastIndex, m.index));
+            const user = sandboxUsers.find(u => u.id === m[1]);
+            const chip = document.createElement('span');
+            chip.className = 'mention-chip';
+            chip.textContent = user ? `@${user.name}` : `@${m[1]}`;
+            chip.title = user ? `User ID: ${m[1]}` : 'Unknown user';
+            result.push(chip.outerHTML);
+            lastIndex = m.index + m[0].length;
+        }
+        if (lastIndex < text.length) result.push(text.slice(lastIndex));
+        return result.join('');
+    }
+    
+    list.innerHTML = '';
+    dms.forEach(dm => {
+        const div = document.createElement('div');
+        div.className = 'p-4 hover:bg-sb-tertiary transition-colors';
+        const time = new Date(dm.createdAt).toLocaleString();
+        div.innerHTML = `
+            <div class="flex items-start gap-3">
+                <div class="w-8 h-8 rounded-full bg-sb-accent flex items-center justify-center text-xs font-bold text-white flex-shrink-0">
+                    ${dm.sender.name.charAt(0).toUpperCase()}
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="font-semibold text-sm">${dm.sender.name}</span>
+                        <span class="text-xs text-sb-text-muted">→</span>
+                        <span class="font-semibold text-sm">${dm.recipient.name}</span>
+                        <span class="text-xs text-sb-text-muted ml-auto">${time}</span>
+                    </div>
+                    <div class="text-sm text-sb-text-secondary whitespace-pre-wrap break-words">${formatMentions(dm.content)}</div>
+                    <div class="text-[10px] text-sb-text-muted font-mono mt-1">Recipient ID: ${dm.recipientId}</div>
+                </div>
+            </div>
+        `;
+        list.appendChild(div);
+    });
+}
+
 /* ── Wire up buttons ── */
 document.getElementById('refresh-storage-btn').addEventListener('click', refreshStorage);
 document.getElementById('save-storage-btn').addEventListener('click', saveStorage);
 document.getElementById('add-user-btn').addEventListener('click', addUser);
+document.getElementById('refresh-dms-btn')?.addEventListener('click', loadDirectMessages);
 document.getElementById('current-user-select').addEventListener('change', async (e) => {
     currentSandboxUserId = e.target.value;
     await fetch('/api/current-user', {
@@ -413,6 +479,7 @@ script.src = '/bundle.js';
 script.onload = async () => {
     await fetchUsers();
     await loadMessageHistory();
+    await loadDirectMessages();
     const res = await fetch('/api/current-user');
     const { currentUserId: savedUserId } = await res.json();
     currentSandboxUserId = savedUserId;
