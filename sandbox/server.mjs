@@ -360,6 +360,26 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
+    // Serve sandbox static assets (styles.css, require-shim.js, sandbox.js)
+    const sandboxAssets = {
+      '/styles.css': { file: 'styles.css', type: 'text/css' },
+      '/require-shim.js': { file: 'require-shim.js', type: 'application/javascript' },
+      '/json-editor.js': { file: 'json-editor.js', type: 'application/javascript' },
+      '/sandbox.js': { file: 'sandbox.js', type: 'application/javascript' },
+    };
+    if (sandboxAssets[url.pathname]) {
+      const asset = sandboxAssets[url.pathname];
+      const p = path.join(__dirname, asset.file);
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': asset.type });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
     // Serve UI index.html
     if (url.pathname === '/') {
       const htmlPath = path.join(__dirname, 'index.html');
