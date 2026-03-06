@@ -33,18 +33,35 @@ export async function startServer(port, extensionDir) {
     fs.writeFileSync(storageFile, JSON.stringify(data, null, 2));
   };
 
-  const clients = new Set(); // For SSE to the UI
-  const messages = []; // In-memory history
+  // Load sandbox settings (users + chat history) from disk if it exists
+  const settingsFile = path.join(extensionDir, '.sandbox-settings.json');
+  let sandboxSettings = { users: [], messages: [], currentUserId: 'user-1' };
+  if (fs.existsSync(settingsFile)) {
+    try {
+      sandboxSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
+    } catch(e) { console.error('[Sandbox] Failed to load settings file:', e); }
+  }
 
-  // Mock Users
-  let users = Array.from({ length: 3 }).map((_, i) => ({
+  const persistSettings = () => {
+    fs.writeFileSync(settingsFile, JSON.stringify(sandboxSettings, null, 2));
+  };
+
+  const clients = new Set(); // For SSE to the UI
+  const messages = sandboxSettings.messages; // Use persisted messages
+
+  // Mock Users - use persisted users or defaults
+  let users = sandboxSettings.users.length > 0 ? sandboxSettings.users : Array.from({ length: 3 }).map((_, i) => ({
     id: `user-${i + 1}`,
     name: `Mock User ${i + 1}`,
     avatarUrl: `https://i.pravatar.cc/150?u=user-${i + 1}`
   }));
+  if (sandboxSettings.users.length === 0) {
+    sandboxSettings.users = users;
+    persistSettings();
+  }
 
   // Ensure current user is selected in UI
-  let currentUserId = 'user-1';
+  let currentUserId = sandboxSettings.currentUserId || 'user-1';
 
   // Mocked Context
   let messageHandler = null;
@@ -87,6 +104,8 @@ export async function startServer(port, extensionDir) {
           user: { id: 'ext-bot', name: manifest.name || 'Extension' }
         };
         messages.push(msg); // Add to history
+        sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
+        persistSettings();
         // Broadcast to specific clients
         for (const client of clients) {
           client.res.write(`data: ${JSON.stringify(msg)}\n\n`);
@@ -209,6 +228,8 @@ export async function startServer(port, extensionDir) {
             mentionIds: [...new Set([...(data.mentionIds || []), ...mentionIds])]
           };
           messages.push({ ...event, user: sender }); // add to history too
+          sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
+          persistSettings();
           try {
             await messageHandler(event);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -283,6 +304,35 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
+    // Current user API
+    if (url.pathname === '/api/current-user' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ currentUserId }));
+      return;
+    }
+
+    if (url.pathname === '/api/current-user' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        const data = JSON.parse(body);
+        currentUserId = data.currentUserId;
+        sandboxSettings.currentUserId = currentUserId;
+        persistSettings();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true }));
+      });
+      return;
+    }
+
+    // Messages history API
+    if (url.pathname === '/api/messages' && req.method === 'GET') {
+      const limit = parseInt(url.searchParams.get('limit') || '100');
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(messages.slice(-limit)));
+      return;
+    }
+
     if (url.pathname === '/api/users' && req.method === 'POST') {
       let body = '';
       req.on('data', chunk => { body += chunk; });
@@ -303,6 +353,8 @@ export async function startServer(port, extensionDir) {
             if (!newUser.avatarUrl) newUser.avatarUrl = `https://i.pravatar.cc/150?u=${newUser.id}`;
             users.push(newUser);
           }
+          sandboxSettings.users = users;
+          persistSettings();
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(newUser));
         } catch(e) {
@@ -316,6 +368,8 @@ export async function startServer(port, extensionDir) {
     if (url.pathname === '/api/users' && req.method === 'DELETE') {
       const id = url.searchParams.get('id');
       users = users.filter(u => u.id !== id);
+      sandboxSettings.users = users;
+      persistSettings();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
       return;

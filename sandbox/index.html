@@ -117,10 +117,8 @@
             <div id="mention-picker"></div>
             <div id="command-picker"></div>
             <div class="p-4 px-5 bg-sb-secondary border-t border-sb-border flex gap-2.5 items-end">
-                <div id="msg-input" contenteditable="true" role="textbox"
-                    data-placeholder="Type a message to the channel…"
-                    class="flex-1 px-3.5 py-2.5 rounded-xl border border-sb-border bg-sb-tertiary text-sb-text-primary outline-none text-sm min-h-[20px] max-h-[120px] overflow-y-auto whitespace-pre-wrap break-words transition-colors focus:border-sb-accent">
-                </div>
+                <textarea id="msg-input" placeholder="Type a message to the channel…" rows="1"
+                    class="flex-1 px-3.5 py-2.5 rounded-xl border border-sb-border bg-sb-tertiary text-sb-text-primary outline-none text-sm resize-none transition-colors focus:border-sb-accent"></textarea>
                 <button id="send-btn" class="btn-accent">Send</button>
             </div>
         </div>

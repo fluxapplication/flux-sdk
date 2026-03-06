@@ -43,21 +43,26 @@
     border-bottom-left-radius: 4px;
 }
 
-/* ── Mentions ── */
-.message .mention,
-#msg-input .mention-chip {
+/* ── Mention Chip ── */
+.mention-chip {
     display: inline-flex;
-    padding: 1px 6px;
-    border-radius: 4px;
-    background: rgba(139, 92, 246, 0.15);
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(139, 92, 246, 0.25);
     color: #c4b5fd;
     font-weight: 500;
     font-size: 13px;
-    border: 1px solid rgba(139, 92, 246, 0.25);
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    margin: 0 2px;
+    cursor: pointer;
+    transition: background 0.15s ease;
 }
-#msg-input .mention-chip { user-select: all; padding: 0 4px; }
+.mention-chip:hover {
+    background: rgba(139, 92, 246, 0.35);
+}
 
-/* ── Mention Picker ── */
+/* ── Command Picker ── */
 #mention-picker {
     position: absolute; bottom: 80px; left: 20px; width: 280px;
     background: #22222e; border: 1px solid #2a2a3a; border-radius: 12px;
@@ -124,13 +129,6 @@
 }
 .command-item.active .command-badge {
     background: rgba(139, 92, 246, 0.3); color: #c4b5fd;
-}
-
-/* ── Content-editable placeholder ── */
-#msg-input:empty::before {
-    content: attr(data-placeholder);
-    color: #5a5a6e;
-    pointer-events: none;
 }
 
 /* ── Buttons ── */

@@ -50,11 +50,12 @@ function appendMessage(sender, text, isBot) {
     let m;
     while ((m = MENTION_PATTERN.exec(text)) !== null) {
         if (m.index > lastIndex) textDiv.appendChild(document.createTextNode(text.slice(lastIndex, m.index)));
-        const mentionSpan = document.createElement('span');
-        mentionSpan.className = 'mention';
+        const mentionChip = document.createElement('span');
+        mentionChip.className = 'mention-chip';
         const user = sandboxUsers.find(u => u.id === m[1]);
-        mentionSpan.textContent = user ? `@${user.name}` : `@${m[1]}`;
-        textDiv.appendChild(mentionSpan);
+        mentionChip.textContent = user ? `@${user.name}` : `@${m[1]}`;
+        mentionChip.title = user ? `User ID: ${m[1]}` : 'Unknown user';
+        textDiv.appendChild(mentionChip);
         lastIndex = m.index + m[0].length;
     }
     if (lastIndex < text.length) textDiv.appendChild(document.createTextNode(text.slice(lastIndex)));
@@ -72,6 +73,14 @@ events.onmessage = (e) => {
     appendMessage(msg.user.name, msg.content, true);
 };
 
+async function loadMessageHistory() {
+    const res = await fetch('/api/messages?limit=100');
+    const msgs = await res.json();
+    msgs.forEach(msg => {
+        appendMessage(msg.user.name, msg.content, true);
+    });
+}
+
 /* ── Mention Picker ── */
 const mentionPicker = document.getElementById('mention-picker');
 let mentionPickerVisible = false, mentionQuery = '', mentionIndex = 0, filteredMembers = [], mentionRange = null;
@@ -81,11 +90,11 @@ const commandPicker = document.getElementById('command-picker');
 let commandPickerVisible = false, commandQuery = '', commandIndex = 0, filteredCommands = [], manifestCommands = [];
 
 function updateMentionPicker() {
-    if (!pickerVisible || filteredMembers.length === 0) { mentionPicker.classList.remove('visible'); return; }
+    if (!mentionPickerVisible || filteredMembers.length === 0) { mentionPicker.classList.remove('visible'); return; }
     mentionPicker.innerHTML = '';
     filteredMembers.forEach((m, i) => {
         const div = document.createElement('div');
-        div.className = `picker-item ${i === pickerIndex ? 'active' : ''}`;
+        div.className = `picker-item ${i === mentionIndex ? 'active' : ''}`;
         div.innerHTML = `<div class="picker-avatar" style="background-image:url(${m.avatarUrl})"></div><div>${m.name}</div>`;
         div.addEventListener('mousedown', (e) => { e.preventDefault(); insertMention(m); });
         mentionPicker.appendChild(div);
@@ -95,39 +104,28 @@ function updateMentionPicker() {
 
 function insertMention(user) {
     if (!mentionRange) return;
-    const sel = window.getSelection();
-    sel.removeAllRanges(); sel.addRange(mentionRange);
-    mentionRange.deleteContents();
-    const chip = document.createElement('span');
-    chip.className = 'mention-chip'; chip.contentEditable = 'false';
-    chip.setAttribute('data-user-id', user.id); chip.textContent = `@${user.name}`;
-    mentionRange.insertNode(chip);
-    mentionRange.setStartAfter(chip); mentionRange.collapse(true);
-    const space = document.createTextNode('\u200B ');
-    mentionRange.insertNode(space); mentionRange.setStartAfter(space); mentionRange.collapse(true);
-    sel.removeAllRanges(); sel.addRange(mentionRange);
-    mentionPickerVisible = false; updateMentionPicker(); input.focus();
+    const pos = input.selectionStart;
+    const text = input.value;
+    const before = text.substring(0, mentionRange.start);
+    const after = text.substring(pos);
+    input.value = before + `<@${user.id}> ` + after;
+    input.selectionStart = input.selectionEnd = before.length + user.id.length + 4;
+    mentionPickerVisible = false;
+    updateMentionPicker();
+    input.focus();
 }
 
 function getCaretBoundary() {
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return null;
-    const range = sel.getRangeAt(0);
-    if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) {
-        const text = range.commonAncestorContainer.textContent.substring(0, range.endOffset);
-        const lastAt = text.lastIndexOf('@');
-        if (lastAt === -1) return null;
-        const charBefore = lastAt > 0 ? text[lastAt - 1] : ' ';
-        if (charBefore !== ' ' && charBefore !== '\n') return null;
-        const afterAt = text.slice(lastAt + 1);
-        const spaceIdx = afterAt.search(/\s/);
-        const query = spaceIdx === -1 ? afterAt : afterAt.slice(0, spaceIdx);
-        const r = range.cloneRange();
-        r.setStart(range.commonAncestorContainer, lastAt);
-        r.setEnd(range.commonAncestorContainer, range.endOffset);
-        return { query, range: r };
-    }
-    return null;
+    const pos = input.selectionStart;
+    const text = input.value.substring(0, pos);
+    const lastAt = text.lastIndexOf('@');
+    if (lastAt === -1) return null;
+    const charBefore = lastAt > 0 ? text[lastAt - 1] : ' ';
+    if (charBefore !== ' ' && charBefore !== '\n') return null;
+    const afterAt = text.slice(lastAt + 1);
+    const spaceIdx = afterAt.search(/\s/);
+    const query = spaceIdx === -1 ? afterAt : afterAt.slice(0, spaceIdx);
+    return { query, start: lastAt, end: pos };
 }
 
 /* ── Command Picker Functions ── */
@@ -171,31 +169,17 @@ function updateCommandPicker() {
 }
 
 function insertCommand(cmd) {
-    const sel = window.getSelection();
-    if (!sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    if (range.commonAncestorContainer.nodeType !== Node.TEXT_NODE) return;
-    
-    const text = range.commonAncestorContainer.textContent;
-    const caretPos = range.endOffset;
-    const lastSlash = text.lastIndexOf('/', caretPos);
+    const pos = input.selectionStart;
+    const text = input.value;
+    const before = text.substring(0, pos);
+    const lastSlash = before.lastIndexOf('/');
     if (lastSlash === -1) return;
-    
-    const charBefore = lastSlash > 0 ? text[lastSlash - 1] : ' ';
+    const charBefore = lastSlash > 0 ? before[lastSlash - 1] : ' ';
     if (charBefore !== ' ' && charBefore !== '\n' && lastSlash !== 0) return;
-    
-    range.setStart(range.commonAncestorContainer, lastSlash);
-    range.setEnd(range.commonAncestorContainer, caretPos);
-    range.deleteContents();
-    
-    const cmdText = `/${cmd.name} `;
-    const textNode = document.createTextNode(cmdText);
-    range.insertNode(textNode);
-    range.setStartAfter(textNode);
-    range.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(range);
-    
+    const after = text.substring(pos);
+    const newText = before.substring(0, lastSlash) + `/${cmd.name} ` + after;
+    input.value = newText;
+    input.selectionStart = input.selectionEnd = lastSlash + cmd.name.length + 2;
     commandPickerVisible = false;
     updateCommandPicker();
     input.focus();
@@ -203,25 +187,18 @@ function insertCommand(cmd) {
 
 input.addEventListener('input', () => {
     // Command picker trigger: "/" at start of line or after whitespace
-    const sel = window.getSelection();
+    const pos = input.selectionStart;
+    const text = input.value;
+    const textBeforeCursor = text.substring(0, pos);
+    const lastSlash = textBeforeCursor.lastIndexOf('/');
     let commandTrigger = null;
-    if (sel.rangeCount) {
-        const range = sel.getRangeAt(0);
-        if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) {
-            const text = range.commonAncestorContainer.textContent.substring(0, range.endOffset);
-            const lastSlash = text.lastIndexOf('/');
-            if (lastSlash !== -1) {
-                const charBefore = lastSlash > 0 ? text[lastSlash - 1] : ' ';
-                if (charBefore === ' ' || charBefore === '\n' || lastSlash === 0) {
-                    const afterSlash = text.slice(lastSlash + 1);
-                    const spaceIdx = afterSlash.search(/\s/);
-                    const query = spaceIdx === -1 ? afterSlash : afterSlash.slice(0, spaceIdx);
-                    const r = range.cloneRange();
-                    r.setStart(range.commonAncestorContainer, lastSlash);
-                    r.setEnd(range.commonAncestorContainer, range.endOffset);
-                    commandTrigger = { query, range: r };
-                }
-            }
+    if (lastSlash !== -1) {
+        const charBefore = lastSlash > 0 ? textBeforeCursor[lastSlash - 1] : ' ';
+        if (charBefore === ' ' || charBefore === '\n' || lastSlash === 0) {
+            const afterSlash = textBeforeCursor.slice(lastSlash + 1);
+            const spaceIdx = afterSlash.search(/\s/);
+            const query = spaceIdx === -1 ? afterSlash : afterSlash.slice(0, spaceIdx);
+            commandTrigger = { query, start: lastSlash, end: pos };
         }
     }
     
@@ -243,7 +220,7 @@ input.addEventListener('input', () => {
     if (boundary) {
         mentionQuery = boundary.query.toLowerCase();
         filteredMembers = sandboxUsers.filter(u => u && u.name && u.name.toLowerCase().includes(mentionQuery));
-        mentionPickerVisible = true; mentionIndex = 0; mentionRange = boundary.range;
+        mentionPickerVisible = true; mentionIndex = 0; mentionRange = { start: boundary.start, end: boundary.end };
     } else { mentionPickerVisible = false; }
     updateMentionPicker();
 });
@@ -267,24 +244,13 @@ input.addEventListener('keydown', e => {
 });
 
 function serializeInput() {
-    let out = "";
-    const walk = (node) => {
-        if (node.nodeType === Node.TEXT_NODE) { out += node.textContent.replace(/\u200B/g, ""); return; }
-        if (node.nodeType === Node.ELEMENT_NODE) {
-            if (node.tagName === "BR") { out += "\n"; return; }
-            if (node.tagName === "DIV" && out.length > 0) out += "\n";
-            if (node.getAttribute("contenteditable") === "false" && node.hasAttribute("data-user-id")) { out += `<@${node.getAttribute("data-user-id")}>`; return; }
-            node.childNodes.forEach(walk);
-        }
-    };
-    input.childNodes.forEach(walk);
-    return out;
+    return input.value;
 }
 
 async function sendMessage() {
     const finalContent = serializeInput().trim();
     if (!finalContent) return;
-    input.innerHTML = '';
+    input.value = '';
     const sender = sandboxUsers.find(u => u.id === currentSandboxUserId) || { name: 'You' };
     appendMessage(sender.name, finalContent, false);
     await fetch('/api/messages', {
@@ -431,16 +397,27 @@ function renderUsers() {
 document.getElementById('refresh-storage-btn').addEventListener('click', refreshStorage);
 document.getElementById('save-storage-btn').addEventListener('click', saveStorage);
 document.getElementById('add-user-btn').addEventListener('click', addUser);
-document.getElementById('current-user-select').addEventListener('change', (e) => {
+document.getElementById('current-user-select').addEventListener('change', async (e) => {
     currentSandboxUserId = e.target.value;
+    await fetch('/api/current-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentUserId: currentSandboxUserId })
+    });
     reRenderApp();
 });
 
 /* ── Load extension bundle ── */
 const script = document.createElement('script');
 script.src = '/bundle.js';
-script.onload = () => {
-    fetchUsers().then(() => tryMount());
+script.onload = async () => {
+    await fetchUsers();
+    await loadMessageHistory();
+    const res = await fetch('/api/current-user');
+    const { currentUserId: savedUserId } = await res.json();
+    currentSandboxUserId = savedUserId;
     refreshStorage();
+    tryMount();
+    renderUserSelect();
 };
 document.body.appendChild(script);
