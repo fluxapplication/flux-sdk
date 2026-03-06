@@ -32,6 +32,12 @@ fetch('/manifest.json')
         document.getElementById('ext-name').textContent = m.name;
         document.getElementById('ext-slug').textContent = m.slug;
         document.title = `Sandbox: ${m.name}`;
+        manifestCommands = (m.commands || []).map(cmd => ({
+            name: cmd.name,
+            description: cmd.description || '',
+            usage: cmd.usage || '',
+            extensionName: m.name
+        }));
     }).catch(console.error);
 
 function appendMessage(sender, text, isBot) {
@@ -68,7 +74,11 @@ events.onmessage = (e) => {
 
 /* ── Mention Picker ── */
 const mentionPicker = document.getElementById('mention-picker');
-let pickerVisible = false, pickerQuery = '', pickerIndex = 0, filteredMembers = [], mentionRange = null;
+let mentionPickerVisible = false, mentionQuery = '', mentionIndex = 0, filteredMembers = [], mentionRange = null;
+
+/* ── Command Picker ── */
+const commandPicker = document.getElementById('command-picker');
+let commandPickerVisible = false, commandQuery = '', commandIndex = 0, filteredCommands = [], manifestCommands = [];
 
 function updateMentionPicker() {
     if (!pickerVisible || filteredMembers.length === 0) { mentionPicker.classList.remove('visible'); return; }
@@ -96,7 +106,7 @@ function insertMention(user) {
     const space = document.createTextNode('\u200B ');
     mentionRange.insertNode(space); mentionRange.setStartAfter(space); mentionRange.collapse(true);
     sel.removeAllRanges(); sel.addRange(mentionRange);
-    pickerVisible = false; updateMentionPicker(); input.focus();
+    mentionPickerVisible = false; updateMentionPicker(); input.focus();
 }
 
 function getCaretBoundary() {
@@ -120,22 +130,138 @@ function getCaretBoundary() {
     return null;
 }
 
+/* ── Command Picker Functions ── */
+function updateCommandPicker() {
+    if (!commandPickerVisible || filteredCommands.length === 0) {
+        commandPicker.classList.remove('visible');
+        return;
+    }
+    commandPicker.innerHTML = `
+        <div class="command-picker-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/>
+                <polyline points="22,6 12,13 2,6"/>
+            </svg>
+            Commands
+            <span class="command-picker-hint">↑↓ navigate · Enter select · Esc close</span>
+        </div>
+    `;
+    const list = document.createElement('div');
+    list.className = 'command-picker-list';
+    filteredCommands.forEach((cmd, i) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = `command-item ${i === commandIndex ? 'active' : ''}`;
+        btn.innerHTML = `
+            <div class="command-item-content">
+                <div>
+                    <span class="command-name">/${cmd.name}</span>
+                    ${cmd.usage ? `<span class="command-usage">${cmd.usage.replace(`/${cmd.name}`, '').trim()}</span>` : ''}
+                </div>
+                <div class="command-description">${cmd.description}</div>
+            </div>
+            ${cmd.extensionName ? `<span class="command-badge">${cmd.extensionName}</span>` : ''}
+        `;
+        btn.addEventListener('mousedown', (e) => { e.preventDefault(); insertCommand(cmd); });
+        btn.addEventListener('mouseenter', () => { commandIndex = i; updateCommandPicker(); });
+        list.appendChild(btn);
+    });
+    commandPicker.appendChild(list);
+    commandPicker.classList.add('visible');
+}
+
+function insertCommand(cmd) {
+    const sel = window.getSelection();
+    if (!sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    if (range.commonAncestorContainer.nodeType !== Node.TEXT_NODE) return;
+    
+    const text = range.commonAncestorContainer.textContent;
+    const caretPos = range.endOffset;
+    const lastSlash = text.lastIndexOf('/', caretPos);
+    if (lastSlash === -1) return;
+    
+    const charBefore = lastSlash > 0 ? text[lastSlash - 1] : ' ';
+    if (charBefore !== ' ' && charBefore !== '\n' && lastSlash !== 0) return;
+    
+    range.setStart(range.commonAncestorContainer, lastSlash);
+    range.setEnd(range.commonAncestorContainer, caretPos);
+    range.deleteContents();
+    
+    const cmdText = `/${cmd.name} `;
+    const textNode = document.createTextNode(cmdText);
+    range.insertNode(textNode);
+    range.setStartAfter(textNode);
+    range.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    
+    commandPickerVisible = false;
+    updateCommandPicker();
+    input.focus();
+}
+
 input.addEventListener('input', () => {
+    // Command picker trigger: "/" at start of line or after whitespace
+    const sel = window.getSelection();
+    let commandTrigger = null;
+    if (sel.rangeCount) {
+        const range = sel.getRangeAt(0);
+        if (range.commonAncestorContainer.nodeType === Node.TEXT_NODE) {
+            const text = range.commonAncestorContainer.textContent.substring(0, range.endOffset);
+            const lastSlash = text.lastIndexOf('/');
+            if (lastSlash !== -1) {
+                const charBefore = lastSlash > 0 ? text[lastSlash - 1] : ' ';
+                if (charBefore === ' ' || charBefore === '\n' || lastSlash === 0) {
+                    const afterSlash = text.slice(lastSlash + 1);
+                    const spaceIdx = afterSlash.search(/\s/);
+                    const query = spaceIdx === -1 ? afterSlash : afterSlash.slice(0, spaceIdx);
+                    const r = range.cloneRange();
+                    r.setStart(range.commonAncestorContainer, lastSlash);
+                    r.setEnd(range.commonAncestorContainer, range.endOffset);
+                    commandTrigger = { query, range: r };
+                }
+            }
+        }
+    }
+    
+    // Update command picker
+    if (commandTrigger && !commandTrigger.query.includes(' ')) {
+        commandQuery = commandTrigger.query.toLowerCase();
+        filteredCommands = commandQuery === ''
+            ? manifestCommands
+            : manifestCommands.filter(c => c.name.toLowerCase().startsWith(commandQuery));
+        commandPickerVisible = filteredCommands.length > 0;
+        commandIndex = 0;
+    } else {
+        commandPickerVisible = false;
+    }
+    updateCommandPicker();
+
+    // Mention picker trigger
     const boundary = getCaretBoundary();
     if (boundary) {
-        pickerQuery = boundary.query.toLowerCase();
-        filteredMembers = sandboxUsers.filter(u => u && u.name && u.name.toLowerCase().includes(pickerQuery));
-        pickerVisible = true; pickerIndex = 0; mentionRange = boundary.range;
-    } else { pickerVisible = false; }
+        mentionQuery = boundary.query.toLowerCase();
+        filteredMembers = sandboxUsers.filter(u => u && u.name && u.name.toLowerCase().includes(mentionQuery));
+        mentionPickerVisible = true; mentionIndex = 0; mentionRange = boundary.range;
+    } else { mentionPickerVisible = false; }
     updateMentionPicker();
 });
 
 input.addEventListener('keydown', e => {
-    if (pickerVisible) {
-        if (e.key === 'ArrowDown') { e.preventDefault(); pickerIndex = (pickerIndex + 1) % filteredMembers.length; updateMentionPicker(); return; }
-        if (e.key === 'ArrowUp') { e.preventDefault(); pickerIndex = (pickerIndex - 1 + filteredMembers.length) % filteredMembers.length; updateMentionPicker(); return; }
-        if (e.key === 'Enter') { e.preventDefault(); if (filteredMembers[pickerIndex]) insertMention(filteredMembers[pickerIndex]); return; }
-        if (e.key === 'Escape') { e.preventDefault(); pickerVisible = false; updateMentionPicker(); return; }
+    // Command picker keyboard handling
+    if (commandPickerVisible) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); commandIndex = (commandIndex + 1) % filteredCommands.length; updateCommandPicker(); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); commandIndex = (commandIndex - 1 + filteredCommands.length) % filteredCommands.length; updateCommandPicker(); return; }
+        if (e.key === 'Enter') { e.preventDefault(); if (filteredCommands[commandIndex]) insertCommand(filteredCommands[commandIndex]); return; }
+        if (e.key === 'Escape') { e.preventDefault(); commandPickerVisible = false; updateCommandPicker(); return; }
+    }
+    // Mention picker keyboard handling
+    if (mentionPickerVisible) {
+        if (e.key === 'ArrowDown') { e.preventDefault(); mentionIndex = (mentionIndex + 1) % filteredMembers.length; updateMentionPicker(); return; }
+        if (e.key === 'ArrowUp') { e.preventDefault(); mentionIndex = (mentionIndex - 1 + filteredMembers.length) % filteredMembers.length; updateMentionPicker(); return; }
+        if (e.key === 'Enter') { e.preventDefault(); if (filteredMembers[mentionIndex]) insertMention(filteredMembers[mentionIndex]); return; }
+        if (e.key === 'Escape') { e.preventDefault(); mentionPickerVisible = false; updateMentionPicker(); return; }
     }
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
 });
