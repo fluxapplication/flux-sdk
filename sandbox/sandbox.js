@@ -756,6 +756,9 @@ document.body.appendChild(script);
 
 /* ── Debug Console ── */
 const extLogsContainer = document.getElementById("ext-logs-panel");
+const extLogsFrontendContainer = document.getElementById("ext-logs-frontend");
+const extLogsBackendContainer = document.getElementById("ext-logs-backend");
+const extLogsDivider = document.getElementById("ext-logs-divider");
 const apiCallsContainer = document.getElementById("api-calls-panel");
 const tabExtLogs = document.getElementById("tab-ext-logs");
 const tabApiCalls = document.getElementById("tab-api-calls");
@@ -808,7 +811,7 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-function addExtLog(type, args) {
+function addExtLog(type, args, source = "frontend") {
   if (debugPaused) return;
   const time = new Date().toLocaleTimeString("en-US", {
     hour12: false,
@@ -816,15 +819,19 @@ function addExtLog(type, args) {
     minute: "2-digit",
     second: "2-digit",
   });
-  const log = { type, time, args };
+  const log = { type, time, args, source };
   extLogs.push(log);
   if (extLogs.length > 200) extLogs.shift();
   renderExtLogs();
 }
 
 function renderExtLogs() {
+  const frontendLogs = extLogs.filter(log => log.source === "frontend");
+  const backendLogs = extLogs.filter(log => log.source === "backend");
+  
   tabExtLogs.textContent = `Extension Logs (${extLogs.length})`;
-  extLogsContainer.innerHTML = extLogs
+  
+  extLogsFrontendContainer.innerHTML = frontendLogs
     .map((log) => {
       const message = log.args.map((arg) => formatValue(arg)).join(" ");
       return `
@@ -835,7 +842,20 @@ function renderExtLogs() {
         `;
     })
     .join("");
-  extLogsContainer.scrollTop = extLogsContainer.scrollHeight;
+  extLogsFrontendContainer.scrollTop = extLogsFrontendContainer.scrollHeight;
+  
+  extLogsBackendContainer.innerHTML = backendLogs
+    .map((log) => {
+      const message = log.args.map((arg) => formatValue(arg)).join(" ");
+      return `
+            <div class="debug-log ${log.type}">
+                <span class="debug-log-time">${log.time}</span>
+                <span class="debug-log-message">${message}</span>
+            </div>
+        `;
+    })
+    .join("");
+  extLogsBackendContainer.scrollTop = extLogsBackendContainer.scrollHeight;
 }
 
 function addApiCall(method, path, params) {
@@ -996,19 +1016,19 @@ window.addExtLog = addExtLog;
 
   console.log = (...args) => {
     originalConsole.log(...args);
-    addExtLog("log", args);
+    addExtLog("log", args, "frontend");
   };
   console.warn = (...args) => {
     originalConsole.warn(...args);
-    addExtLog("warn", args);
+    addExtLog("warn", args, "frontend");
   };
   console.error = (...args) => {
     originalConsole.error(...args);
-    addExtLog("error", args);
+    addExtLog("error", args, "frontend");
   };
   console.info = (...args) => {
     originalConsole.info(...args);
-    addExtLog("info", args);
+    addExtLog("info", args, "frontend");
   };
 })();
 
@@ -1016,5 +1036,38 @@ window.addExtLog = addExtLog;
 const debugEvents = new EventSource("/api/debug/logs");
 debugEvents.onmessage = (e) => {
   const log = JSON.parse(e.data);
-  addExtLog(log.type, log.args);
+  addExtLog(log.type, log.args, log.source || "backend");
 };
+
+/* ── Resizable divider for split logs ── */
+(function() {
+  let isResizing = false;
+  let startX = 0;
+  let startLeftWidth = 0;
+  
+  extLogsDivider.addEventListener('mousedown', (e) => {
+    isResizing = true;
+    startX = e.clientX;
+    startLeftWidth = extLogsFrontendContainer.offsetWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+  
+  document.addEventListener('mousemove', (e) => {
+    if (!isResizing) return;
+    const dx = e.clientX - startX;
+    const containerWidth = extLogsFrontendContainer.parentElement.offsetWidth - extLogsDivider.offsetWidth;
+    const newWidth = Math.max(100, Math.min(containerWidth - 100, startLeftWidth + dx));
+    const percentage = (newWidth / containerWidth) * 100;
+    extLogsFrontendContainer.style.flex = `0 0 ${percentage}%`;
+    extLogsBackendContainer.style.flex = `0 0 ${100 - percentage}%`;
+  });
+  
+  document.addEventListener('mouseup', () => {
+    if (isResizing) {
+      isResizing = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  });
+})();

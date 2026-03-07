@@ -63,15 +63,15 @@ export async function startServer(port, extensionDir) {
 
   console.log = (...args) => {
     originalConsoleLog.apply(console, args);
-    broadcastDebugLog({ type: 'log', args: args.map(a => String(a)) });
+    broadcastDebugLog({ type: 'log', args: args.map(a => String(a)), source: 'backend' });
   };
   console.warn = (...args) => {
     originalConsoleWarn.apply(console, args);
-    broadcastDebugLog({ type: 'warn', args: args.map(a => String(a)) });
+    broadcastDebugLog({ type: 'warn', args: args.map(a => String(a)), source: 'backend' });
   };
   console.error = (...args) => {
     originalConsoleError.apply(console, args);
-    broadcastDebugLog({ type: 'error', args: args.map(a => String(a)) });
+    broadcastDebugLog({ type: 'error', args: args.map(a => String(a)), source: 'backend' });
   };
 
   // Mock Users - use persisted users or defaults
@@ -94,75 +94,70 @@ export async function startServer(port, extensionDir) {
   const ctx = {
     workspaceId: 'sandbox-workspace',
     currentUserId,
-    api: {
-      storage: {
-        get: async (key) => {
-          const logMsg = `[API] ctx.api.storage.get("${key}")`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          return storage.get(key) ?? null;
-        },
-        set: async (key, value) => { 
-          const logMsg = `[API] ctx.api.storage.set("${key}", ${JSON.stringify(value)})`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          storage.set(key, value); 
-          persistStorage(); 
-        },
-        delete: async (key) => { 
-          const logMsg = `[API] ctx.api.storage.delete("${key}")`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          storage.delete(key); 
-          persistStorage(); 
-        },
-        listKeys: async () => Array.from(storage.keys())
-      },
-      ai: {
-        complete: async (messages, options) => {
-          const logMsg = `[API] ctx.api.ai.complete(${messages.length} messages, ${JSON.stringify(options)})`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          return `[Mocked AI response to: ${messages[messages.length - 1]?.content}]`;
-        }
-      },
-      ui: {
-        addContextMenuItem: (label, handler) => {
-          console.log(`[Sandbox] Context menu item registered: ${label}`);
-        }
-      },
-      users: {
-        list: async () => {
-          const logMsg = `[API] ctx.api.users.list()`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          return users;
-        },
-        get: async (userId) => {
-          const logMsg = `[API] ctx.api.users.get("${userId}")`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          return users.find(u => u.id === userId) || null;
-        },
-        getRole: async (userId) => {
-          const logMsg = `[API] ctx.api.users.getRole("${userId}")`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          const user = users.find(u => u.id === userId);
-          return user?.role || null;
-        },
-        getCurrentUserRole: async () => {
-          const logMsg = `[API] ctx.api.users.getCurrentUserRole()`;
-          console.log(`[Sandbox] ${logMsg}`);
-          broadcastDebugLog({ type: 'log', args: [logMsg] });
-          const user = users.find(u => u.id === currentUserId);
-          return user?.role || 'MEMBER';
-        }
-      },
-      sendMessage: async (channelId, content) => {
-        const logMsg = `[API] ctx.api.sendMessage("${channelId}", ${JSON.stringify(content)})`;
+    storage: {
+      get: async (key) => {
+        const logMsg = `[API] ctx.storage.get("${key}")`;
         console.log(`[Sandbox] ${logMsg}`);
-        broadcastDebugLog({ type: 'log', args: [logMsg] });
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        return storage.get(key) ?? null;
+      },
+      set: async (key, value) => { 
+        const logMsg = `[API] ctx.storage.set("${key}", ${JSON.stringify(value)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        storage.set(key, value); 
+        persistStorage(); 
+      },
+      delete: async (key) => { 
+        const logMsg = `[API] ctx.storage.delete("${key}")`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        storage.delete(key); 
+        persistStorage(); 
+      },
+      listKeys: async () => Array.from(storage.keys())
+    },
+    ai: {
+      complete: async (messages, options) => {
+        const logMsg = `[API] ctx.ai.complete(${messages.length} messages, ${JSON.stringify(options)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        return `[Mocked AI response to: ${messages[messages.length - 1]?.content}]`;
+      }
+    },
+    users: {
+      list: async () => {
+        const logMsg = `[API] ctx.users.list()`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        return users;
+      },
+      get: async (userId) => {
+        const logMsg = `[API] ctx.users.get("${userId}")`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        return users.find(u => u.id === userId) || null;
+      },
+      getRole: async (userId) => {
+        const logMsg = `[API] ctx.users.getRole("${userId}")`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        const user = users.find(u => u.id === userId);
+        return user?.role || null;
+      },
+      getCurrentUserRole: async () => {
+        const logMsg = `[API] ctx.users.getCurrentUserRole()`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        const user = users.find(u => u.id === currentUserId);
+        return user?.role || 'MEMBER';
+      }
+    },
+    messages: {
+      sendMessage: async (channelId, content) => {
+        const logMsg = `[API] ctx.messages.sendMessage("${channelId}", ${JSON.stringify(content)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         
         const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
         const mentionIds = [];
@@ -180,18 +175,17 @@ export async function startServer(port, extensionDir) {
           createdAt: new Date(),
           user: { id: 'ext-bot', name: manifest.name || 'Extension' }
         };
-        messages.push(msg); // Add to history
-        sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
+        messages.push(msg);
+        sandboxSettings.messages = messages.slice(-500);
         persistSettings();
-        // Broadcast to specific clients
         for (const client of clients) {
           client.res.write(`data: ${JSON.stringify(msg)}\n\n`);
         }
       },
       sendDirectMessage: async (userId, content) => {
-        const logMsg = `[API] ctx.api.sendDirectMessage("${userId}", ${JSON.stringify(content)})`;
+        const logMsg = `[API] ctx.messages.sendDirectMessage("${userId}", ${JSON.stringify(content)})`;
         console.log(`[Sandbox] ${logMsg}`);
-        broadcastDebugLog({ type: 'log', args: [logMsg] });
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         
         const dm = {
           id: `dm-${Date.now()}`,
@@ -203,29 +197,19 @@ export async function startServer(port, extensionDir) {
           recipient: users.find(u => u.id === userId) || { id: userId, name: 'Unknown User' }
         };
         directMessages.push(dm);
-        sandboxSettings.directMessages = directMessages.slice(-500); // Keep last 500 DMs
+        sandboxSettings.directMessages = directMessages.slice(-500);
         persistSettings();
         
-        // Broadcast to specific clients
         for (const client of clients) {
           client.res.write(`data: ${JSON.stringify({ type: 'dm:created', ...dm })}\n\n`);
         }
       },
       getMessages: async (channelId, limit = 50) => {
-         return messages.slice(-limit);
+        return messages.slice(-limit);
       },
-      users: {
-        list: async () => users,
-        get: async (userId) => users.find(u => u.id === userId) || null,
-        getRole: async (userId) => {
-          const user = users.find(u => u.id === userId);
-          return user?.role || null;
-        },
-        getCurrentUserRole: async () => {
-          const user = users.find(u => u.id === currentUserId);
-          return user?.role || 'MEMBER';
-        }
-      },
+    },
+    frontend: undefined,
+    backend: {
       onMessage: (handler) => {
         messageHandler = handler;
       },

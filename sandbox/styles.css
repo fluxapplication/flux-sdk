@@ -301,6 +301,23 @@
     font-size: 10px;
     margin-right: 8px;
 }
+.debug-log-source {
+    display: inline-block;
+    padding: 2px 5px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    margin-right: 8px;
+    text-transform: uppercase;
+}
+.debug-log-source.frontend {
+    background: #1e3a5f;
+    color: #60a5fa;
+}
+.debug-log-source.backend {
+    background: #3b1f5f;
+    color: #c084fc;
+}
 .debug-log-message {
     color: #e8e8f0;
     word-break: break-word;
