@@ -35,11 +35,28 @@ export async function startServer(port, extensionDir) {
 
   // Load sandbox settings (users + chat history) from disk if it exists
   const settingsFile = path.join(extensionDir, '.sandbox-settings.json');
-  let sandboxSettings = { users: [], messages: [], currentUserId: 'user-1', directMessages: [] };
+  let sandboxSettings = null;
   if (fs.existsSync(settingsFile)) {
     try {
       sandboxSettings = JSON.parse(fs.readFileSync(settingsFile, 'utf-8'));
     } catch(e) { console.error('[Sandbox] Failed to load settings file:', e); }
+  }
+
+  // If file doesn't exist or has no users, create default settings with users
+  if (!sandboxSettings || !sandboxSettings.users || sandboxSettings.users.length === 0) {
+    const defaultUsers = Array.from({ length: 3 }).map((_, i) => ({
+      id: `sandbox-user-${i + 1}`,
+      name: `Mock User ${i + 1}`,
+      role: i === 0 ? 'OWNER' : 'MEMBER'
+    }));
+    sandboxSettings = {
+      users: defaultUsers,
+      messages: [],
+      currentUserId: 'sandbox-user-1',
+      directMessages: []
+    };
+    fs.writeFileSync(settingsFile, JSON.stringify(sandboxSettings, null, 2));
+    console.log('[Sandbox] Created default settings with users');
   }
 
   const persistSettings = () => {
@@ -74,19 +91,10 @@ export async function startServer(port, extensionDir) {
     broadcastDebugLog({ type: 'error', args: args.map(a => String(a)), source: 'backend' });
   };
 
-  // Mock Users - use persisted users or defaults
-  let users = sandboxSettings.users.length > 0 ? sandboxSettings.users : Array.from({ length: 3 }).map((_, i) => ({
-    id: `sandbox-user-${i + 1}`,
-    name: `Mock User ${i + 1}`,
-    avatarUrl: `https://i.pravatar.cc/150?u=sandbox-user-${i + 1}`,
-    role: i === 0 ? 'OWNER' : 'MEMBER'
-  }));
-  if (sandboxSettings.users.length === 0) {
-    sandboxSettings.users = users;
-    persistSettings();
-  }
+  // Use users from settings (already validated above)
+  let users = sandboxSettings.users;
 
-  // Ensure current user is selected in UI
+  // Ensure current user is set
   let currentUserId = sandboxSettings.currentUserId || 'sandbox-user-1';
 
   // Mocked Context
@@ -471,8 +479,7 @@ export async function startServer(port, extensionDir) {
             }
           } else {
             // Create new
-            newUser.id = `user-${Date.now()}`;
-            if (!newUser.avatarUrl) newUser.avatarUrl = `https://i.pravatar.cc/150?u=${newUser.id}`;
+            newUser.id = newUser.id || `user-${crypto.randomUUID()}`;
             if (!newUser.role) newUser.role = 'MEMBER';
             users.push(newUser);
           }

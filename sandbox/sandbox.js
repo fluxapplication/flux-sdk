@@ -120,7 +120,7 @@ function updateMentionPicker() {
   filteredMembers.forEach((m, i) => {
     const div = document.createElement("div");
     div.className = `picker-item ${i === mentionIndex ? "active" : ""}`;
-    div.innerHTML = `<div class="picker-avatar" style="background-image:url(${m.avatarUrl})"></div><div>${m.name}</div>`;
+    div.innerHTML = `<div>${m.name}</div>`;
     div.addEventListener("mousedown", (e) => {
       e.preventDefault();
       insertMention(m);
@@ -361,19 +361,16 @@ let sandboxUsers = [
   {
     id: "sandbox-user-1",
     name: "Mock User 1",
-    avatarUrl: "https://i.pravatar.cc/150?u=sandbox-user-1",
     role: "OWNER",
   },
   {
     id: "sandbox-user-2",
     name: "Mock User 2",
-    avatarUrl: "https://i.pravatar.cc/150?u=sandbox-user-2",
     role: "MEMBER",
   },
   {
     id: "sandbox-user-3",
     name: "Mock User 3",
-    avatarUrl: "https://i.pravatar.cc/150?u=sandbox-user-3",
     role: "MEMBER",
   },
 ];
@@ -591,17 +588,17 @@ async function deleteUser(id) {
 }
 
 async function addUser() {
+  const id = document.getElementById("new-user-id").value.trim();
   const name = document.getElementById("new-user-name").value.trim();
-  const avatarUrl = document.getElementById("new-user-avatar").value.trim();
   const role = document.getElementById("new-user-role").value;
   if (!name) return;
   await fetch("/api/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, avatarUrl, role }),
+    body: JSON.stringify({ id: id || undefined, name, role }),
   });
+  document.getElementById("new-user-id").value = "";
   document.getElementById("new-user-name").value = "";
-  document.getElementById("new-user-avatar").value = "";
   await fetchUsers();
 }
 
@@ -634,7 +631,6 @@ function renderUsers() {
           ? "text-blue-400"
           : "text-zinc-400";
     card.innerHTML = `
-                <div class="user-avatar" style="background-image:url(${u.avatarUrl})"></div>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-[13px]">${u.name}</div>
                     <div class="text-[11px] text-[#5a5a6e] font-mono">${u.id}</div>

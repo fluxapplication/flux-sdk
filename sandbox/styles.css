@@ -77,7 +77,6 @@
 }
 .picker-item:last-child { border-bottom: none; }
 .picker-item:hover, .picker-item.active { background: #1a1a26; }
-.picker-avatar { width: 24px; height: 24px; border-radius: 50%; background-size: cover; flex-shrink: 0; }
 
 /* ── Command Picker ── */
 #command-picker {
@@ -154,11 +153,6 @@
     transition: border-color 0.2s ease;
 }
 .user-card:hover { border-color: #3a3a4e; }
-.user-avatar {
-    width: 36px; height: 36px; border-radius: 50%;
-    background-size: cover; background-position: center;
-    flex-shrink: 0; border: 2px solid #2a2a3a;
-}
 
 /* ── Animations ── */
 @keyframes msgIn {
