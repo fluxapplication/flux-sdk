@@ -32,6 +32,18 @@ export interface MessageEvent {
 
 export type MessageHandler = (event: MessageEvent) => Promise<void> | void;
 
+export interface ReactionEvent {
+  type: "reaction:added" | "reaction:removed";
+  channelId: string;
+  messageId: string;
+  workspaceId: string;
+  reaction: Reaction;
+  recipientUserId: string;
+  actorId: string;
+}
+
+export type ReactionHandler = (event: ReactionEvent) => Promise<void> | void;
+
 export interface WebhookEvent {
   headers: Record<string, string>;
   body: unknown;
@@ -115,6 +127,8 @@ export interface MessagesAPI {
 export interface BackendContext {
   /** Listen to messages in the workspace. */
   onMessage(handler: MessageHandler): void;
+  /** Listen to reactions in the workspace. */
+  onReaction(handler: ReactionHandler): void;
   /** Register webhook handler. */
   onWebhook(handler: WebhookHandler): void;
   /** Schedule recurring tasks. */

@@ -100,6 +100,8 @@ export async function startServer(port, extensionDir) {
 
   // Mocked Context
   let messageHandler = null;
+  let reactionHandler = null;
+  console.log('[Sandbox] Setting up ctx with backend handlers');
   const ctx = {
     workspaceId: 'sandbox-workspace',
     currentUserId,
@@ -236,6 +238,18 @@ export async function startServer(port, extensionDir) {
           for (const client of clients) {
             client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
           }
+          const msg = messages.find(m => m.id === messageId);
+          if (reactionHandler && msg) {
+            await reactionHandler({
+              type: "reaction:removed",
+              channelId: 'sandbox-channel',
+              messageId,
+              workspaceId: 'sandbox-workspace',
+              reaction: existing,
+              recipientUserId: msg.userId,
+              actorId: currentUserId,
+            });
+          }
           return { removed: true };
         }
 
@@ -249,6 +263,20 @@ export async function startServer(port, extensionDir) {
         reactions.push(reaction);
         for (const client of clients) {
           client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+        }
+        const msg = messages.find(m => m.id === messageId);
+        console.log(`[Sandbox] Reaction added. msg:`, msg, 'handler:', !!reactionHandler);
+        if (reactionHandler && msg && msg.userId !== currentUserId) {
+          console.log(`[Sandbox] Calling reaction handler for emoji: ${emoji}`);
+          await reactionHandler({
+            type: "reaction:added",
+            channelId: 'sandbox-channel',
+            messageId,
+            workspaceId: 'sandbox-workspace',
+            reaction,
+            recipientUserId: msg.userId,
+            actorId: currentUserId,
+          });
         }
         return { reaction };
       },
@@ -264,6 +292,9 @@ export async function startServer(port, extensionDir) {
       onMessage: (handler) => {
         messageHandler = handler;
       },
+      onReaction: (handler) => {
+        reactionHandler = handler;
+      },
       onWebhook: () => {},
       schedule: () => {},
       cancelSchedule: () => {},
@@ -276,6 +307,7 @@ export async function startServer(port, extensionDir) {
       console.log(`[Sandbox] Loading backend code from ${backendPath}...`);
       try {
         messageHandler = null; // Clear old handler
+        reactionHandler = null; // Clear old handler
         // Adding a query string to bust import cache if reloading
         const extModule = await import(new URL(`file://${backendPath}?t=${Date.now()}`));
         const ext = extModule.extension || extModule.default?.extension || extModule.default;
@@ -527,6 +559,18 @@ export async function startServer(port, extensionDir) {
             for (const client of clients) {
               client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
             }
+            const msg = messages.find(m => m.id === messageId);
+            if (reactionHandler && msg) {
+              await reactionHandler({
+                type: "reaction:removed",
+                channelId: 'sandbox-channel',
+                messageId,
+                workspaceId: 'sandbox-workspace',
+                reaction: existing,
+                recipientUserId: msg.userId,
+                actorId: currentUserId,
+              });
+            }
             res.writeHead(200);
             res.end(JSON.stringify({ removed: true }));
           } else {
@@ -540,6 +584,20 @@ export async function startServer(port, extensionDir) {
             reactions.push(reaction);
             for (const client of clients) {
               client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+            }
+            const msg = messages.find(m => m.id === messageId);
+            console.log(`[Sandbox] Reaction added. msg:`, msg, 'handler:', !!reactionHandler);
+            if (reactionHandler && msg && msg.userId !== currentUserId) {
+              console.log(`[Sandbox] Calling reaction handler for emoji: ${emoji}`);
+              await reactionHandler({
+                type: "reaction:added",
+                channelId: 'sandbox-channel',
+                messageId,
+                workspaceId: 'sandbox-workspace',
+                reaction,
+                recipientUserId: msg.userId,
+                actorId: currentUserId,
+              });
             }
             res.writeHead(201);
             res.end(JSON.stringify({ reaction }));
