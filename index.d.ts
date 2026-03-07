@@ -1,16 +1,13 @@
 /**
  * Flux Extension SDK
- *
- * This is the ONLY public API surface available to extensions.
- * Extensions MUST NOT import anything from backend/src or frontend/src.
- * All platform capabilities are accessed through the ctx object passed to onLoad().
+ * 
+ * Unified context for building Flux extensions.
+ * Works in both backend and frontend.
+ * 
+ * Import: `import type { ExtensionContext, ExtensionDefinition } from "flux-sdk"`
  */
 
-// ─── Types ───────────────────────────────────────────────────────────────────────
-
 export type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
-
-// ─── Permissions ─────────────────────────────────────────────────────────────
 
 export type ExtensionPermission =
   | "messages.read"
@@ -22,7 +19,7 @@ export type ExtensionPermission =
   | "ai.access"
   | "webhooks";
 
-// ─── Events ──────────────────────────────────────────────────────────────────
+// ─── Core Types ─────────────────────────────────────────────────────────────
 
 export interface MessageEvent {
   id: string;
@@ -30,41 +27,46 @@ export interface MessageEvent {
   workspaceId: string;
   content: string;
   userId: string;
-  /** User IDs mentioned in the message via @mention (<@userId>) */
   mentionIds: string[];
 }
 
-export type MessageHandler = (event: MessageEvent) => Promise<void>;
-
-// ─── Webhook ──────────────────────────────────────────────────────────────────
+export type MessageHandler = (event: MessageEvent) => Promise<void> | void;
 
 export interface WebhookEvent {
-  /**
-   * Incoming request headers, all keys lowercased.
-   * Example: event.headers["x-github-event"], event.headers["x-hub-signature-256"]
-   */
   headers: Record<string, string>;
-  /** Parsed JSON payload. Cast to the expected shape per event type. */
   body: unknown;
-  /**
-   * Raw UTF-8 request body string.
-   * Use for HMAC-SHA256 signature verification before trusting `body`.
-   */
   rawBody: string;
 }
 
 export type WebhookHandler = (event: WebhookEvent) => Promise<void> | void;
 
-// ─── API surfaces ─────────────────────────────────────────────────────────────
+export interface WorkspaceUser {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  role: WorkspaceRole;
+}
+
+export interface ChannelMessage {
+  id: string;
+  content: string;
+  userId: string;
+  mentionIds: string[];
+  createdAt: Date;
+  user: { id: string; name: string };
+}
+
+export interface Channel {
+  id: string;
+  name: string;
+}
+
+// ─── Core APIs ────────────────────────────────────────────────────────────
 
 export interface StorageAPI {
-  /** Retrieve a value by key. Returns null if not found. Requires storage.read. */
   get<T = unknown>(key: string): Promise<T | null>;
-  /** Store a value by key. Requires storage.write. */
   set(key: string, value: unknown): Promise<void>;
-  /** Delete a value by key. Requires storage.write. */
   delete(key: string): Promise<void>;
-  /** List all stored keys for this extension in this workspace. Requires storage.read. */
   listKeys(): Promise<string[]>;
 }
 
@@ -77,141 +79,103 @@ export interface AiOptions {
   model?: string;
   maxTokens?: number;
   systemPrompt?: string;
-  /** User-provided API key retrieved from ctx.api.storage. Required — the platform has no default key. */
   apiKey: string;
-  /** AI provider. Defaults to "openai". */
   provider?: "openai" | "openrouter";
 }
 
 export interface AiAPI {
-  /** Send messages to the AI model. Requires ai.access. */
   complete(messages: AiMessage[], options: AiOptions): Promise<string>;
 }
 
-export type ContextMenuHandler = (message: MessageEvent) => void | Promise<void>;
-
-export interface UiAPI {
-  /**
-   * Add an item to the message right-click context menu.
-   * The handler receives the message that was right-clicked.
-   * Requires ui.render.
-   */
-  addContextMenuItem(label: string, handler: ContextMenuHandler): void;
-}
-
-export interface ChannelMessage {
-  id: string;
-  content: string;
-  userId: string;
-  mentionIds: string[];
-  createdAt: Date;
-  user: { id: string; name: string };
-}
-
-export interface WorkspaceUser {
-  id: string;
-  name: string;
-  avatarUrl?: string;
-  role: WorkspaceRole;
-}
-
 export interface UsersAPI {
-  /** Get all users in the workspace. */
   list(): Promise<WorkspaceUser[]>;
-  /** Get a specific user by ID. Returns null if not found. */
   get(userId: string): Promise<WorkspaceUser | null>;
-  /** Get the role of a specific user. Returns null if not found. */
   getRole(userId: string): Promise<WorkspaceRole | null>;
-  /** Get the current user's role in the workspace. */
   getCurrentUserRole(): Promise<WorkspaceRole>;
 }
 
-// ─── Extension Context ────────────────────────────────────────────────────────
-
-export interface ExtensionAPI {
-  /** Per-extension key-value storage (scoped to this workspace). */
-  readonly storage: StorageAPI;
-  /** AI completion proxy (API key never exposed to extension). */
-  readonly ai: AiAPI;
-  /** UI integration surface (context menus, etc.). Requires ui.render. */
-  readonly ui: UiAPI;
-  /** User and role management. */
-  readonly users: UsersAPI;
-
-  /** Post a message to a channel as this extension's bot user. Requires messages.write. */
+export interface MessagesAPI {
   sendMessage(channelId: string, content: string): Promise<void>;
-
-  /** Send a direct message to a user by their ID. Requires messages.write. */
   sendDirectMessage(userId: string, content: string): Promise<void>;
-
-  /** Fetch the last N messages from a channel. Requires messages.read. */
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
+}
 
-  /** Listen to new messages in this workspace. Requires messages.read. */
+// ─── Backend Context ────────────────────────────────────────────────────────
+
+export interface BackendContext {
+  /** Listen to messages in the workspace. */
   onMessage(handler: MessageHandler): void;
-
-  /**
-   * Register a handler for incoming webhook POST requests to this extension's endpoint.
-   * Endpoint: POST /webhooks/{extensionSlug}/{workspaceId}
-   *
-   * The platform delivers the raw request to the handler. The extension is responsible
-   * for verifying the signature using `event.rawBody` and a secret from its own storage.
-   * Requires webhooks permission.
-   */
+  /** Register webhook handler. */
   onWebhook(handler: WebhookHandler): void;
-
-  /**
-   * Register a recurring job using a cron expression.
-   * The job persists as long as the extension is loaded.
-   * Requires scheduler.
-   *
-   * @param jobKey   Unique key within this extension (used to cancel/replace)
-   * @param cron     Standard cron expression, e.g. "0 9 * * 1-5"
-   * @param handler  Async function called on each tick
-   */
+  /** Schedule recurring tasks. */
   schedule(jobKey: string, cron: string, handler: () => Promise<void>): void;
-
-  /** Cancel a previously registered scheduled job. */
+  /** Cancel scheduled task. */
   cancelSchedule(jobKey: string): void;
 }
 
-export interface ExtensionContext {
-  /** The workspace this extension instance is loaded for. */
-  readonly workspaceId: string;
-  /** The ID of the user currently interacting with the extension. */
-  readonly currentUserId: string;
-  /** The full API surface. Only methods permitted by the manifest are callable. */
-  readonly api: ExtensionAPI;
+// ─── Frontend Context ─────────────────────────────────────────────────────
+
+export interface FrontendContext {
+  /** All channels in the workspace. */
+  channels: ReadonlyArray<Channel>;
+  /** API server URL. */
+  serverUrl: string;
+  /** Resolve user ID to display name. */
+  getUserNameById(userId: string): Promise<string | null>;
 }
 
-// ─── Extension Definition ─────────────────────────────────────────────────────
+// ─── Unified Context ─────────────────────────────────────────────────────
+
+export interface ExtensionContext {
+  /** The workspace this extension is running in. */
+  workspaceId: string;
+  /** The current user interacting with the extension. */
+  currentUserId: string;
+
+  // Core APIs - work in both backend and frontend
+  storage: StorageAPI;
+  ai: AiAPI;
+  users: UsersAPI;
+  messages: MessagesAPI;
+
+  // Backend-only (undefined in frontend)
+  backend?: BackendContext;
+
+  // Frontend-only (undefined in backend)
+  frontend?: FrontendContext;
+}
+
+// ─── Extension Definition ─────────────────────────────────────────────────
 
 export interface ExtensionDefinition {
-  /**
-   * Called once when the extension is loaded for a workspace.
-   * Register message handlers, webhook handlers, and schedules here.
-   */
   onLoad?(ctx: ExtensionContext): void | Promise<void>;
-
-  /**
-   * Called when the extension is unloaded (disabled or workspace removed).
-   * Clean up any resources that weren't created through ctx.api.
-   */
   onUnload?(): void;
 }
 
-// ─── Manifest ─────────────────────────────────────────────────────────────────
-
 export interface ExtensionManifest {
-  /** Unique identifier. Use kebab-case, e.g. "my-extension". */
   slug: string;
   name: string;
   version: string;
   description?: string;
-  /** List of permissions required. The runtime enforces these. */
   permissions: ExtensionPermission[];
-  /** Path to the backend entry file relative to the extension directory. */
   backend: string;
-  /** Path to the frontend UI component file (optional). */
   frontend?: string;
+}
+
+// ─── Component Props ───────────────────────────────────────────────────────
+
+export interface ExtensionPanelProps {
+  ctx: ExtensionContext;
+}
+
+export interface MessageRendererProps {
+  message: { id: string; content: string };
+  ctx: ExtensionContext;
+  currentUserId: string;
+}
+
+export interface RendererEntry {
+  slug: string;
+  match: (content: string) => boolean;
+  component: (props: MessageRendererProps) => unknown;
 }
