@@ -30,6 +30,7 @@
     border-radius: 12px;
     max-width: 75%;
     animation: msgIn 0.25s ease;
+    position: relative;
 }
 .message.user {
     background: #1e3a5f;
@@ -427,5 +428,89 @@
 }
 .debug-toggle-content.collapsed {
     display: none !important;
+}
+
+/* ── Message Reactions ── */
+.message-reactions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+    align-items: center;
+}
+.reaction-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    border: 1px solid #2a2a3a;
+    background: #1a1a26;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s ease;
+}
+.reaction-btn:hover {
+    background: #22222e;
+    border-color: #3a3a4e;
+}
+.reaction-btn.reacted {
+    background: rgba(139, 92, 246, 0.2);
+    border-color: rgba(139, 92, 246, 0.4);
+}
+.reaction-count {
+    font-size: 11px;
+    color: #9898aa;
+    font-weight: 500;
+}
+.reaction-btn.reacted .reaction-count {
+    color: #c4b5fd;
+}
+.reaction-add-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 12px;
+    border: 1px dashed #2a2a3a;
+    background: transparent;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.15s ease;
+    color: #5a5a6e;
+}
+.reaction-add-btn:hover {
+    background: #1a1a26;
+    border-color: #3a3a4e;
+    color: #9898aa;
+}
+.emoji-picker {
+    position: absolute;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+    padding: 8px;
+    background: #22222e;
+    border: 1px solid #2a2a3a;
+    border-radius: 12px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    z-index: 100;
+}
+.emoji-option {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 18px;
+    transition: background 0.15s ease;
+}
+.emoji-option:hover {
+    background: #1a1a26;
 }
 

@@ -47,6 +47,13 @@ export interface WorkspaceUser {
   role: WorkspaceRole;
 }
 
+export interface Reaction {
+  id: string;
+  emoji: string;
+  userId: string;
+  user: { id: string; name: string };
+}
+
 export interface ChannelMessage {
   id: string;
   content: string;
@@ -54,6 +61,7 @@ export interface ChannelMessage {
   mentionIds: string[];
   createdAt: Date;
   user: { id: string; name: string };
+  reactions: Reaction[];
 }
 
 export interface Channel {
@@ -98,6 +106,8 @@ export interface MessagesAPI {
   sendMessage(channelId: string, content: string): Promise<void>;
   sendDirectMessage(userId: string, content: string): Promise<void>;
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
+  addReaction(messageId: string, emoji: string): Promise<{ reaction: Reaction } | { removed: boolean }>;
+  getReactions(messageId: string): Promise<Reaction[]>;
 }
 
 // ─── Backend Context ────────────────────────────────────────────────────────

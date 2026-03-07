@@ -67,6 +67,7 @@ export async function startServer(port, extensionDir) {
   const debugClients = new Set(); // For debug log SSE
   const messages = sandboxSettings.messages; // Use persisted messages
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
+  const reactions = []; // In-memory reactions storage
 
   function broadcastDebugLog(log) {
     for (const client of debugClients) {
@@ -181,7 +182,8 @@ export async function startServer(port, extensionDir) {
           userId: 'ext-bot',
           mentionIds,
           createdAt: new Date(),
-          user: { id: 'ext-bot', name: manifest.name || 'Extension' }
+          user: { id: 'ext-bot', name: manifest.name || 'Extension' },
+          reactions: []
         };
         messages.push(msg);
         sandboxSettings.messages = messages.slice(-500);
@@ -213,7 +215,48 @@ export async function startServer(port, extensionDir) {
         }
       },
       getMessages: async (channelId, limit = 50) => {
-        return messages.slice(-limit);
+        const channelMessages = messages.slice(-limit).map(msg => ({
+          ...msg,
+          reactions: reactions.filter(r => r.messageId === msg.id)
+        }));
+        return channelMessages;
+      },
+      addReaction: async (messageId, emoji) => {
+        const logMsg = `[API] ctx.messages.addReaction("${messageId}", "${emoji}")`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+
+        const existing = reactions.find(
+          r => r.messageId === messageId && r.userId === currentUserId && r.emoji === emoji
+        );
+
+        if (existing) {
+          const idx = reactions.indexOf(existing);
+          reactions.splice(idx, 1);
+          for (const client of clients) {
+            client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
+          }
+          return { removed: true };
+        }
+
+        const reaction = {
+          id: `reaction-${Date.now()}`,
+          messageId,
+          emoji,
+          userId: currentUserId,
+          user: users.find(u => u.id === currentUserId) || { id: currentUserId, name: 'Unknown' }
+        };
+        reactions.push(reaction);
+        for (const client of clients) {
+          client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+        }
+        return { reaction };
+      },
+      getReactions: async (messageId) => {
+        const logMsg = `[API] ctx.messages.getReactions("${messageId}")`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        return reactions.filter(r => r.messageId === messageId);
       },
     },
     frontend: undefined,
@@ -344,7 +387,7 @@ export async function startServer(port, extensionDir) {
             userId: data.userId,
             mentionIds: [...new Set([...(data.mentionIds || []), ...mentionIds])]
           };
-          messages.push({ ...event, user: sender }); // add to history too
+          messages.push({ ...event, user: sender, reactions: [] }); // add to history too
           sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
           persistSettings();
           
@@ -450,8 +493,62 @@ export async function startServer(port, extensionDir) {
     // Messages history API
     if (url.pathname === '/api/messages' && req.method === 'GET') {
       const limit = parseInt(url.searchParams.get('limit') || '100');
+      const msgs = messages.slice(-limit).map(msg => ({
+        ...msg,
+        reactions: reactions.filter(r => r.messageId === msg.id)
+      }));
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify(messages.slice(-limit)));
+      res.end(JSON.stringify(msgs));
+      return;
+    }
+
+    // Reactions API (POST /api/:channelId/:messageId/reactions)
+    const reactionsMatch = url.pathname.match(/^\/api\/[^/]+\/([^/]+)\/reactions$/);
+    if (reactionsMatch && req.method === 'POST') {
+      const messageId = reactionsMatch[1];
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const { emoji } = JSON.parse(body);
+          if (!emoji || typeof emoji !== 'string' || emoji.length === 0 || emoji.length > 10) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'Invalid emoji' }));
+            return;
+          }
+
+          const existing = reactions.find(
+            r => r.messageId === messageId && r.userId === currentUserId && r.emoji === emoji
+          );
+
+          if (existing) {
+            const idx = reactions.indexOf(existing);
+            reactions.splice(idx, 1);
+            for (const client of clients) {
+              client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
+            }
+            res.writeHead(200);
+            res.end(JSON.stringify({ removed: true }));
+          } else {
+            const reaction = {
+              id: `reaction-${Date.now()}`,
+              messageId,
+              emoji,
+              userId: currentUserId,
+              user: users.find(u => u.id === currentUserId) || { id: currentUserId, name: 'Unknown' }
+            };
+            reactions.push(reaction);
+            for (const client of clients) {
+              client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+            }
+            res.writeHead(201);
+            res.end(JSON.stringify({ reaction }));
+          }
+        } catch(e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid request body' }));
+        }
+      });
       return;
     }
 

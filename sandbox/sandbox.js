@@ -41,9 +41,11 @@ fetch("/manifest.json")
   })
   .catch(console.error);
 
-function appendMessage(sender, text, isBot) {
+function appendMessage(sender, text, isBot, messageId = null, reactions = []) {
   const div = document.createElement("div");
   div.className = `message ${isBot ? "bot" : "user"}`;
+  div.dataset.messageId = messageId || "";
+
   const textDiv = document.createElement("div");
   textDiv.className = "text";
   let lastIndex = 0;
@@ -64,12 +66,120 @@ function appendMessage(sender, text, isBot) {
   }
   if (lastIndex < text.length)
     textDiv.appendChild(document.createTextNode(text.slice(lastIndex)));
+
   div.innerHTML = `<div class="text-[11px] text-[#5a5a6e] mb-1 font-semibold">${sender}</div>`;
   div.appendChild(textDiv);
+
+  // Add reactions section if message has an ID
+  if (messageId) {
+    const reactionsDiv = document.createElement("div");
+    reactionsDiv.className = "message-reactions";
+    reactionsDiv.dataset.messageId = messageId;
+    renderReactions(reactionsDiv, reactions, messageId);
+    div.appendChild(reactionsDiv);
+  }
+
   chat.appendChild(div);
   setTimeout(() => {
     chat.scrollTop = chat.scrollHeight;
   }, 10);
+}
+
+/* ── Reactions ── */
+const COMMON_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🎉", "🔥", "👀", "🍬"];
+
+function renderReactions(container, reactions, messageId) {
+  container.innerHTML = "";
+
+  // Group reactions by emoji
+  const grouped = {};
+  reactions.forEach((r) => {
+    if (!grouped[r.emoji]) grouped[r.emoji] = [];
+    grouped[r.emoji].push(r);
+  });
+
+  // Render grouped reactions
+  Object.entries(grouped).forEach(([emoji, reactionList]) => {
+    const btn = document.createElement("button");
+    btn.className = "reaction-btn";
+    const hasReacted = reactionList.some(
+      (r) => r.userId === currentSandboxUserId,
+    );
+    if (hasReacted) btn.classList.add("reacted");
+
+    const count = reactionList.length;
+    btn.innerHTML = `<span class="reaction-emoji">${emoji}</span><span class="reaction-count">${count}</span>`;
+    btn.title = reactionList.map((r) => r.user?.name || r.userId).join(", ");
+
+    btn.addEventListener("click", async () => {
+      await toggleReaction(messageId, emoji);
+    });
+
+    container.appendChild(btn);
+  });
+
+  // Add reaction button
+  const addBtn = document.createElement("button");
+  addBtn.className = "reaction-add-btn";
+  addBtn.innerHTML = "😊";
+  addBtn.title = "Add reaction";
+
+  const emojiPicker = document.createElement("div");
+  emojiPicker.className = "emoji-picker";
+  emojiPicker.style.display = "none";
+
+  COMMON_EMOJIS.forEach((emoji) => {
+    const emojiBtn = document.createElement("button");
+    emojiBtn.className = "emoji-option";
+    emojiBtn.textContent = emoji;
+    emojiBtn.addEventListener("click", async () => {
+      await toggleReaction(messageId, emoji);
+      emojiPicker.style.display = "none";
+    });
+    emojiPicker.appendChild(emojiBtn);
+  });
+
+  addBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    emojiPicker.style.display =
+      emojiPicker.style.display === "none" ? "grid" : "none";
+  });
+
+  document.addEventListener("click", () => {
+    emojiPicker.style.display = "none";
+  });
+
+  container.appendChild(addBtn);
+  container.appendChild(emojiPicker);
+}
+
+async function toggleReaction(messageId, emoji) {
+  await fetch(`/api/sandbox-channel/${messageId}/reactions`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ emoji }),
+  });
+}
+
+function handleReactionEvent(event) {
+  const messageId = event.messageId;
+  const messageEl = document.querySelector(
+    `.message[data-message-id="${messageId}"]`,
+  );
+  if (!messageEl) return;
+
+  const reactionsDiv = messageEl.querySelector(".message-reactions");
+  if (!reactionsDiv) return;
+
+  // Fetch updated reactions
+  fetch(`/api/messages?limit=100`)
+    .then((r) => r.json())
+    .then((msgs) => {
+      const msg = msgs.find((m) => m.id === messageId);
+      if (msg) {
+        renderReactions(reactionsDiv, msg.reactions || [], messageId);
+      }
+    });
 }
 
 /* ── SSE ── */
@@ -84,14 +194,24 @@ events.onmessage = (e) => {
     loadDirectMessages();
     return;
   }
-  appendMessage(msg.user.name, msg.content, true);
+  if (msg.type === "reaction:added" || msg.type === "reaction:removed") {
+    handleReactionEvent(msg);
+    return;
+  }
+  appendMessage(msg.user.name, msg.content, true, msg.id, msg.reactions || []);
 };
 
 async function loadMessageHistory() {
   const res = await fetch("/api/messages?limit=100");
   const msgs = await res.json();
   msgs.forEach((msg) => {
-    appendMessage(msg.user.name, msg.content, true);
+    appendMessage(
+      msg.user.name,
+      msg.content,
+      true,
+      msg.id,
+      msg.reactions || [],
+    );
   });
 }
 
@@ -344,7 +464,9 @@ async function sendMessage() {
   const sender = sandboxUsers.find((u) => u.id === currentSandboxUserId) || {
     name: "You",
   };
-  appendMessage(sender.name, finalContent, false);
+  const tempId = `msg-${Date.now()}`;
+  appendMessage(sender.name, finalContent, false, tempId, []);
+
   await fetch("/api/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -444,6 +566,20 @@ const ctx = {
           encodeURIComponent(channelId),
       );
       return res.json();
+    },
+    addReaction: async (messageId, emoji) => {
+      const channelId = "sandbox-channel";
+      const res = await fetch(`/api/${channelId}/${messageId}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emoji }),
+      });
+      return res.json();
+    },
+    getReactions: async (messageId) => {
+      const msgs = await ctx.messages.getMessages("sandbox-channel", 100);
+      const msg = msgs.find((m) => m.id === messageId);
+      return msg?.reactions || [];
     },
   },
   frontend: {
@@ -822,11 +958,11 @@ function addExtLog(type, args, source = "frontend") {
 }
 
 function renderExtLogs() {
-  const frontendLogs = extLogs.filter(log => log.source === "frontend");
-  const backendLogs = extLogs.filter(log => log.source === "backend");
-  
+  const frontendLogs = extLogs.filter((log) => log.source === "frontend");
+  const backendLogs = extLogs.filter((log) => log.source === "backend");
+
   tabExtLogs.textContent = `Extension Logs (${extLogs.length})`;
-  
+
   extLogsFrontendContainer.innerHTML = frontendLogs
     .map((log) => {
       const message = log.args.map((arg) => formatValue(arg)).join(" ");
@@ -839,7 +975,7 @@ function renderExtLogs() {
     })
     .join("");
   extLogsFrontendContainer.scrollTop = extLogsFrontendContainer.scrollHeight;
-  
+
   extLogsBackendContainer.innerHTML = backendLogs
     .map((log) => {
       const message = log.args.map((arg) => formatValue(arg)).join(" ");
@@ -1036,34 +1172,39 @@ debugEvents.onmessage = (e) => {
 };
 
 /* ── Resizable divider for split logs ── */
-(function() {
+(function () {
   let isResizing = false;
   let startX = 0;
   let startLeftWidth = 0;
-  
-  extLogsDivider.addEventListener('mousedown', (e) => {
+
+  extLogsDivider.addEventListener("mousedown", (e) => {
     isResizing = true;
     startX = e.clientX;
     startLeftWidth = extLogsFrontendContainer.offsetWidth;
-    document.body.style.cursor = 'col-resize';
-    document.body.style.userSelect = 'none';
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
   });
-  
-  document.addEventListener('mousemove', (e) => {
+
+  document.addEventListener("mousemove", (e) => {
     if (!isResizing) return;
     const dx = e.clientX - startX;
-    const containerWidth = extLogsFrontendContainer.parentElement.offsetWidth - extLogsDivider.offsetWidth;
-    const newWidth = Math.max(100, Math.min(containerWidth - 100, startLeftWidth + dx));
+    const containerWidth =
+      extLogsFrontendContainer.parentElement.offsetWidth -
+      extLogsDivider.offsetWidth;
+    const newWidth = Math.max(
+      100,
+      Math.min(containerWidth - 100, startLeftWidth + dx),
+    );
     const percentage = (newWidth / containerWidth) * 100;
     extLogsFrontendContainer.style.flex = `0 0 ${percentage}%`;
     extLogsBackendContainer.style.flex = `0 0 ${100 - percentage}%`;
   });
-  
-  document.addEventListener('mouseup', () => {
+
+  document.addEventListener("mouseup", () => {
     if (isResizing) {
       isResizing = false;
-      document.body.style.cursor = '';
-      document.body.style.userSelect = '';
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
     }
   });
 })();
