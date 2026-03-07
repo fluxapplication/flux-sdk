@@ -269,6 +269,7 @@ sendBtn.addEventListener('click', sendMessage);
 /* ── Frontend Context ── */
 const frontendCtx = {
     workspaceId: 'sandbox-workspace',
+    currentUserId: 'sandbox-user-1',
     channels: [{ id: 'C_SANDBOX_1', name: 'general' }, { id: 'C_SANDBOX_2', name: 'dev-team' }],
     serverUrl: `http://${window.location.host}`,
     users: [],
@@ -278,10 +279,22 @@ const frontendCtx = {
         delete: async (key) => { await fetch('/api/storage', { method: 'POST', body: JSON.stringify({ key, value: null }) }); },
         listKeys: async () => []
     },
+    users: {
+        list: async () => frontendCtx.users,
+        get: async (userId) => frontendCtx.users.find(u => u.id === userId) || null,
+        getRole: async (userId) => {
+            const user = frontendCtx.users.find(u => u.id === userId);
+            return user?.role || null;
+        },
+        getCurrentUserRole: async () => {
+            const user = frontendCtx.users.find(u => u.id === frontendCtx.currentUserId);
+            return user?.role || 'MEMBER';
+        }
+    },
     getUserNameById: async (userId) => { const u = frontendCtx.users.find(u => u.id === userId); return u ? u.name : null; }
 };
 
-let appMounted = false, settingsMounted = false, currentSandboxUserId = 'user-1';
+let appMounted = false, settingsMounted = false, currentSandboxUserId = 'sandbox-user-1';
 
 const tryMount = () => {
     if (window.__FluxExtension__) {
@@ -353,11 +366,12 @@ async function deleteUser(id) {
 async function addUser() {
     const name = document.getElementById('new-user-name').value.trim();
     const avatarUrl = document.getElementById('new-user-avatar').value.trim();
+    const role = document.getElementById('new-user-role').value;
     if (!name) return;
     await fetch('/api/users', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, avatarUrl })
+        body: JSON.stringify({ name, avatarUrl, role })
     });
     document.getElementById('new-user-name').value = '';
     document.getElementById('new-user-avatar').value = '';
@@ -370,7 +384,8 @@ function renderUserSelect() {
     sandboxUsers.forEach(u => {
         const opt = document.createElement('option');
         opt.value = u.id;
-        opt.textContent = `${u.name} (${u.id})`;
+        const roleLabel = u.role === 'OWNER' ? 'Owner' : u.role === 'ADMIN' ? 'Admin' : 'Member';
+        opt.textContent = `${u.name} (${roleLabel})`;
         if (u.id === currentSandboxUserId) opt.selected = true;
         select.appendChild(opt);
     });
@@ -382,12 +397,15 @@ function renderUsers() {
     sandboxUsers.forEach(u => {
         const card = document.createElement('div');
         card.className = 'user-card';
+        const roleLabel = u.role === 'OWNER' ? 'Owner' : u.role === 'ADMIN' ? 'Admin' : 'Member';
+        const roleClass = u.role === 'OWNER' ? 'text-violet-400' : u.role === 'ADMIN' ? 'text-blue-400' : 'text-zinc-400';
         card.innerHTML = `
                 <div class="user-avatar" style="background-image:url(${u.avatarUrl})"></div>
                 <div class="flex-1 min-w-0">
                     <div class="font-semibold text-[13px]">${u.name}</div>
                     <div class="text-[11px] text-[#5a5a6e] font-mono">${u.id}</div>
                 </div>
+                <span class="text-xs font-medium ${roleClass} px-2 py-1 rounded bg-violet-500/10">${roleLabel}</span>
                 <button class="btn-red text-xs delete-user-btn" data-id="${u.id}">Delete</button>
             `;
         list.appendChild(card);
@@ -465,6 +483,7 @@ document.getElementById('add-user-btn').addEventListener('click', addUser);
 document.getElementById('refresh-dms-btn')?.addEventListener('click', loadDirectMessages);
 document.getElementById('current-user-select').addEventListener('change', async (e) => {
     currentSandboxUserId = e.target.value;
+    frontendCtx.currentUserId = currentSandboxUserId;
     await fetch('/api/current-user', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -483,8 +502,247 @@ script.onload = async () => {
     const res = await fetch('/api/current-user');
     const { currentUserId: savedUserId } = await res.json();
     currentSandboxUserId = savedUserId;
+    frontendCtx.currentUserId = savedUserId;
     refreshStorage();
     tryMount();
     renderUserSelect();
 };
 document.body.appendChild(script);
+
+/* ── Debug Console ── */
+const extLogsContainer = document.getElementById('ext-logs-panel');
+const apiCallsContainer = document.getElementById('api-calls-panel');
+const tabExtLogs = document.getElementById('tab-ext-logs');
+const tabApiCalls = document.getElementById('tab-api-calls');
+const clearDebugBtn = document.getElementById('clear-debug-btn');
+const toggleDebugBtn = document.getElementById('toggle-debug-btn');
+
+let debugPaused = false;
+let extLogs = [];
+let apiCalls = [];
+
+tabExtLogs.addEventListener('click', () => {
+    tabExtLogs.classList.add('active');
+    tabApiCalls.classList.remove('active');
+    extLogsContainer.style.display = 'flex';
+    apiCallsContainer.style.display = 'none';
+});
+
+tabApiCalls.addEventListener('click', () => {
+    tabApiCalls.classList.add('active');
+    tabExtLogs.classList.remove('active');
+    extLogsContainer.style.display = 'none';
+    apiCallsContainer.style.display = 'flex';
+});
+
+function formatValue(value) {
+    if (value === null) return '<span class="null">null</span>';
+    if (value === undefined) return '<span class="null">undefined</span>';
+    if (typeof value === 'string') return `<span class="string">"${escapeHtml(value)}"</span>`;
+    if (typeof value === 'number') return `<span class="number">${value}</span>`;
+    if (typeof value === 'boolean') return `<span class="boolean">${value}</span>`;
+    if (Array.isArray(value)) {
+        return `[${value.map(v => formatValue(v)).join(', ')}]`;
+    }
+    if (typeof value === 'object') {
+        const entries = Object.entries(value).map(([k, v]) => `<span class="key">"${escapeHtml(k)}"</span>: ${formatValue(v)}`).join(', ');
+        return `{${entries}}`;
+    }
+    return escapeHtml(String(value));
+}
+
+function escapeHtml(str) {
+    if (typeof str !== 'string') return str;
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function addExtLog(type, args) {
+    if (debugPaused) return;
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const log = { type, time, args };
+    extLogs.push(log);
+    if (extLogs.length > 200) extLogs.shift();
+    renderExtLogs();
+}
+
+function renderExtLogs() {
+    tabExtLogs.textContent = `Extension Logs (${extLogs.length})`;
+    extLogsContainer.innerHTML = extLogs.map(log => {
+        const message = log.args.map(arg => formatValue(arg)).join(' ');
+        return `
+            <div class="debug-log ${log.type}">
+                <span class="debug-log-time">${log.time}</span>
+                <span class="debug-log-message">${message}</span>
+            </div>
+        `;
+    }).join('');
+    extLogsContainer.scrollTop = extLogsContainer.scrollHeight;
+}
+
+function addApiCall(method, path, params) {
+    if (debugPaused) return;
+    const time = new Date().toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const call = { method, path, params, time };
+    apiCalls.push(call);
+    if (apiCalls.length > 200) apiCalls.shift();
+    renderApiCalls();
+}
+
+function renderApiCalls() {
+    tabApiCalls.textContent = `API Calls (${apiCalls.length})`;
+    apiCallsContainer.innerHTML = apiCalls.map((call, idx) => {
+        let paramsHtml = '';
+        if (call.params && Object.keys(call.params).length > 0) {
+            const paramsStr = JSON.stringify(call.params, null, 2);
+            paramsHtml = `
+                <div class="debug-toggle collapsed" data-target="params-${idx}">
+                    <span class="debug-toggle-arrow collapsed">▶</span>
+                    <span>Request (${Object.keys(call.params).length} keys)</span>
+                </div>
+                <div class="debug-toggle-content collapsed" id="params-${idx}">
+                    <div class="debug-api-params"><pre>${escapeHtml(paramsStr)}</pre></div>
+                </div>
+            `;
+        }
+        
+        let responseHtml = '';
+        if (call.response !== undefined) {
+            const responseStr = JSON.stringify(call.response, null, 2);
+            responseHtml = `
+                <div class="debug-toggle collapsed" data-target="response-${idx}">
+                    <span class="debug-toggle-arrow collapsed">▶</span>
+                    <span>Response</span>
+                </div>
+                <div class="debug-toggle-content collapsed" id="response-${idx}">
+                    <div class="debug-api-response"><div class="debug-api-response-label">RESPONSE</div><pre>${escapeHtml(responseStr)}</pre></div>
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="debug-log info">
+                <span class="debug-log-time">${call.time}</span>
+                <span class="debug-api-method ${call.method}">${call.method}</span>
+                <span class="debug-api-path">${escapeHtml(call.path)}</span>
+                ${paramsHtml}
+                ${responseHtml}
+            </div>
+        `;
+    }).join('');
+    
+    document.querySelectorAll('.debug-toggle').forEach(toggle => {
+        toggle.addEventListener('click', () => {
+            const targetId = toggle.dataset.target;
+            const content = document.getElementById(targetId);
+            if (content) {
+                content.classList.toggle('collapsed');
+                toggle.classList.toggle('collapsed');
+                toggle.querySelector('.debug-toggle-arrow').classList.toggle('collapsed');
+            }
+        });
+    });
+    
+    apiCallsContainer.scrollTop = apiCallsContainer.scrollHeight;
+}
+
+clearDebugBtn.addEventListener('click', () => {
+    extLogs = [];
+    apiCalls = [];
+    renderExtLogs();
+    renderApiCalls();
+});
+
+toggleDebugBtn.addEventListener('click', () => {
+    debugPaused = !debugPaused;
+    toggleDebugBtn.textContent = debugPaused ? 'Resume' : 'Pause';
+});
+
+const originalFetch = window.fetch;
+window.fetch = async function(...args) {
+    const [url, options = {}] = args;
+    const urlStr = url instanceof Request ? url.url : url;
+    const method = (options.method || 'GET').toUpperCase();
+    
+    if (urlStr.startsWith('/api/') || urlStr.includes('/api/')) {
+        let params = null;
+        if (options.body) {
+            try {
+                params = JSON.parse(options.body);
+            } catch (e) { params = options.body; }
+        }
+        if (urlStr.includes('?')) {
+            const urlObj = new URL(urlStr, window.location.origin);
+            params = params || {};
+            urlObj.searchParams.forEach((v, k) => { params[k] = v; });
+        }
+        const path = urlStr.split(window.location.origin)[1] || urlStr;
+        
+        const callIndex = apiCalls.length;
+        addApiCall(method, path, params);
+        
+        try {
+            const response = await originalFetch.apply(this, args);
+            const responseClone = response.clone();
+            try {
+                const responseData = await responseClone.json();
+                if (apiCalls[callIndex]) {
+                    apiCalls[callIndex].response = responseData;
+                    renderApiCalls();
+                }
+            } catch (e) {
+                try {
+                    const text = await responseClone.text();
+                    if (apiCalls[callIndex]) {
+                        apiCalls[callIndex].response = text;
+                        renderApiCalls();
+                    }
+                } catch (e2) {}
+            }
+            return response;
+        } catch (err) {
+            if (apiCalls[callIndex]) {
+                apiCalls[callIndex].response = { error: err.message };
+                renderApiCalls();
+            }
+            throw err;
+        }
+    }
+    
+    return originalFetch.apply(this, args);
+};
+
+window.addExtLog = addExtLog;
+
+/* ── Capture extension frontend console logs ── */
+(function() {
+    const originalConsole = {
+        log: console.log.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+        info: console.info.bind(console)
+    };
+    
+    console.log = (...args) => {
+        originalConsole.log(...args);
+        addExtLog('log', args);
+    };
+    console.warn = (...args) => {
+        originalConsole.warn(...args);
+        addExtLog('warn', args);
+    };
+    console.error = (...args) => {
+        originalConsole.error(...args);
+        addExtLog('error', args);
+    };
+    console.info = (...args) => {
+        originalConsole.info(...args);
+        addExtLog('info', args);
+    };
+})();
+
+/* ── Listen for backend debug logs ── */
+const debugEvents = new EventSource('/api/debug/logs');
+debugEvents.onmessage = (e) => {
+    const log = JSON.parse(e.data);
+    addExtLog(log.type, log.args);
+};

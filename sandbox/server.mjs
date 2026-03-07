@@ -47,14 +47,39 @@ export async function startServer(port, extensionDir) {
   };
 
   const clients = new Set(); // For SSE to the UI
+  const debugClients = new Set(); // For debug log SSE
   const messages = sandboxSettings.messages; // Use persisted messages
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
 
+  function broadcastDebugLog(log) {
+    for (const client of debugClients) {
+      client.res.write(`data: ${JSON.stringify(log)}\n\n`);
+    }
+  }
+
+  const originalConsoleLog = console.log;
+  const originalConsoleWarn = console.warn;
+  const originalConsoleError = console.error;
+
+  console.log = (...args) => {
+    originalConsoleLog.apply(console, args);
+    broadcastDebugLog({ type: 'log', args: args.map(a => String(a)) });
+  };
+  console.warn = (...args) => {
+    originalConsoleWarn.apply(console, args);
+    broadcastDebugLog({ type: 'warn', args: args.map(a => String(a)) });
+  };
+  console.error = (...args) => {
+    originalConsoleError.apply(console, args);
+    broadcastDebugLog({ type: 'error', args: args.map(a => String(a)) });
+  };
+
   // Mock Users - use persisted users or defaults
   let users = sandboxSettings.users.length > 0 ? sandboxSettings.users : Array.from({ length: 3 }).map((_, i) => ({
-    id: `user-${i + 1}`,
+    id: `sandbox-user-${i + 1}`,
     name: `Mock User ${i + 1}`,
-    avatarUrl: `https://i.pravatar.cc/150?u=user-${i + 1}`
+    avatarUrl: `https://i.pravatar.cc/150?u=sandbox-user-${i + 1}`,
+    role: i === 0 ? 'OWNER' : 'MEMBER'
   }));
   if (sandboxSettings.users.length === 0) {
     sandboxSettings.users = users;
@@ -62,21 +87,42 @@ export async function startServer(port, extensionDir) {
   }
 
   // Ensure current user is selected in UI
-  let currentUserId = sandboxSettings.currentUserId || 'user-1';
+  let currentUserId = sandboxSettings.currentUserId || 'sandbox-user-1';
 
   // Mocked Context
   let messageHandler = null;
   const ctx = {
     workspaceId: 'sandbox-workspace',
+    currentUserId,
     api: {
       storage: {
-        get: async (key) => storage.get(key) ?? null,
-        set: async (key, value) => { storage.set(key, value); persistStorage(); },
-        delete: async (key) => { storage.delete(key); persistStorage(); },
+        get: async (key) => {
+          const logMsg = `[API] ctx.api.storage.get("${key}")`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          return storage.get(key) ?? null;
+        },
+        set: async (key, value) => { 
+          const logMsg = `[API] ctx.api.storage.set("${key}", ${JSON.stringify(value)})`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          storage.set(key, value); 
+          persistStorage(); 
+        },
+        delete: async (key) => { 
+          const logMsg = `[API] ctx.api.storage.delete("${key}")`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          storage.delete(key); 
+          persistStorage(); 
+        },
         listKeys: async () => Array.from(storage.keys())
       },
       ai: {
         complete: async (messages, options) => {
+          const logMsg = `[API] ctx.api.ai.complete(${messages.length} messages, ${JSON.stringify(options)})`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
           return `[Mocked AI response to: ${messages[messages.length - 1]?.content}]`;
         }
       },
@@ -85,8 +131,38 @@ export async function startServer(port, extensionDir) {
           console.log(`[Sandbox] Context menu item registered: ${label}`);
         }
       },
+      users: {
+        list: async () => {
+          const logMsg = `[API] ctx.api.users.list()`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          return users;
+        },
+        get: async (userId) => {
+          const logMsg = `[API] ctx.api.users.get("${userId}")`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          return users.find(u => u.id === userId) || null;
+        },
+        getRole: async (userId) => {
+          const logMsg = `[API] ctx.api.users.getRole("${userId}")`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          const user = users.find(u => u.id === userId);
+          return user?.role || null;
+        },
+        getCurrentUserRole: async () => {
+          const logMsg = `[API] ctx.api.users.getCurrentUserRole()`;
+          console.log(`[Sandbox] ${logMsg}`);
+          broadcastDebugLog({ type: 'log', args: [logMsg] });
+          const user = users.find(u => u.id === currentUserId);
+          return user?.role || 'MEMBER';
+        }
+      },
       sendMessage: async (channelId, content) => {
-        console.log(`[Sandbox] Extension sent message to ${channelId}: ${content}`);
+        const logMsg = `[API] ctx.api.sendMessage("${channelId}", ${JSON.stringify(content)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg] });
         
         const MENTION_PATTERN = /<@([a-zA-Z0-9_-]+)>/g;
         const mentionIds = [];
@@ -113,7 +189,9 @@ export async function startServer(port, extensionDir) {
         }
       },
       sendDirectMessage: async (userId, content) => {
-        console.log(`[Sandbox] Extension sent DM to ${userId}: ${content}`);
+        const logMsg = `[API] ctx.api.sendDirectMessage("${userId}", ${JSON.stringify(content)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg] });
         
         const dm = {
           id: `dm-${Date.now()}`,
@@ -136,7 +214,18 @@ export async function startServer(port, extensionDir) {
       getMessages: async (channelId, limit = 50) => {
          return messages.slice(-limit);
       },
-      getUsers: async () => users,
+      users: {
+        list: async () => users,
+        get: async (userId) => users.find(u => u.id === userId) || null,
+        getRole: async (userId) => {
+          const user = users.find(u => u.id === userId);
+          return user?.role || null;
+        },
+        getCurrentUserRole: async () => {
+          const user = users.find(u => u.id === currentUserId);
+          return user?.role || 'MEMBER';
+        }
+      },
       onMessage: (handler) => {
         messageHandler = handler;
       },
@@ -225,6 +314,20 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
+    // SSE endpoint for debug logs
+    if (url.pathname === '/api/debug/logs') {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive'
+      });
+      res.write(': connected\n\n');
+      const client = { res };
+      debugClients.add(client);
+      req.on('close', () => debugClients.delete(client));
+      return;
+    }
+
     // API to send message AS A USER
     if (url.pathname === '/api/messages' && req.method === 'POST') {
       let body = '';
@@ -252,6 +355,11 @@ export async function startServer(port, extensionDir) {
           messages.push({ ...event, user: sender }); // add to history too
           sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
           persistSettings();
+          
+          // Set current user for extensions to query
+          currentUserId = data.userId;
+          ctx.currentUserId = data.userId;
+          
           try {
             await messageHandler(event);
             res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -381,6 +489,7 @@ export async function startServer(port, extensionDir) {
             // Create new
             newUser.id = `user-${Date.now()}`;
             if (!newUser.avatarUrl) newUser.avatarUrl = `https://i.pravatar.cc/150?u=${newUser.id}`;
+            if (!newUser.role) newUser.role = 'MEMBER';
             users.push(newUser);
           }
           sandboxSettings.users = users;

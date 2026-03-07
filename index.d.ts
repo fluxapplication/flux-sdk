@@ -6,6 +6,10 @@
  * All platform capabilities are accessed through the ctx object passed to onLoad().
  */
 
+// ─── Types ───────────────────────────────────────────────────────────────────────
+
+export type WorkspaceRole = "OWNER" | "ADMIN" | "MEMBER";
+
 // ─── Permissions ─────────────────────────────────────────────────────────────
 
 export type ExtensionPermission =
@@ -104,6 +108,24 @@ export interface ChannelMessage {
   user: { id: string; name: string };
 }
 
+export interface WorkspaceUser {
+  id: string;
+  name: string;
+  avatarUrl?: string;
+  role: WorkspaceRole;
+}
+
+export interface UsersAPI {
+  /** Get all users in the workspace. */
+  list(): Promise<WorkspaceUser[]>;
+  /** Get a specific user by ID. Returns null if not found. */
+  get(userId: string): Promise<WorkspaceUser | null>;
+  /** Get the role of a specific user. Returns null if not found. */
+  getRole(userId: string): Promise<WorkspaceRole | null>;
+  /** Get the current user's role in the workspace. */
+  getCurrentUserRole(): Promise<WorkspaceRole>;
+}
+
 // ─── Extension Context ────────────────────────────────────────────────────────
 
 export interface ExtensionAPI {
@@ -113,6 +135,8 @@ export interface ExtensionAPI {
   readonly ai: AiAPI;
   /** UI integration surface (context menus, etc.). Requires ui.render. */
   readonly ui: UiAPI;
+  /** User and role management. */
+  readonly users: UsersAPI;
 
   /** Post a message to a channel as this extension's bot user. Requires messages.write. */
   sendMessage(channelId: string, content: string): Promise<void>;
@@ -154,6 +178,8 @@ export interface ExtensionAPI {
 export interface ExtensionContext {
   /** The workspace this extension instance is loaded for. */
   readonly workspaceId: string;
+  /** The ID of the user currently interacting with the extension. */
+  readonly currentUserId: string;
   /** The full API surface. Only methods permitted by the manifest are callable. */
   readonly api: ExtensionAPI;
 }
