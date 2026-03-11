@@ -190,6 +190,7 @@ export interface ExtensionManifest {
 
 export interface ExtensionPanelProps {
   ctx: ExtensionContext;
+  currentUserId: string;
 }
 
 export interface MessageRendererProps {
