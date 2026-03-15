@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --radius-2xl: calc(var(--radius) + 8px);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+}
+
+:root {
+    --font-sans: "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
+    --radius: 0.625rem;
+    --background: oklch(0.13 0.028 261.692);
+    --foreground: oklch(0.985 0.002 247.839);
+    --card: oklch(0.21 0.034 264.665);
+    --card-foreground: oklch(0.985 0.002 247.839);
+    --popover: oklch(0.21 0.034 264.665);
+    --popover-foreground: oklch(0.985 0.002 247.839);
+    --primary: oklch(0.627 0.265 304);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.278 0.033 256.848);
+    --secondary-foreground: oklch(0.985 0.002 247.839);
+    --muted: oklch(0.278 0.033 256.848);
+    --muted-foreground: oklch(0.707 0.022 261.325);
+    --accent: oklch(0.278 0.033 256.848);
+    --accent-foreground: oklch(0.985 0.002 247.839);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.627 0.265 304);
+}
+
+body {
+    font-family: var(--font-sans), system-ui, sans-serif;
+    background: var(--background);
+    color: var(--foreground);
+}
+
+/* Prevent text selection on interactive and non-text elements */
+button,
+img {
+    user-select: none;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #3f3f46;
+    border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #52525b;
+}
+
+/* Animation keyframes */
+@keyframes msgIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes toastOut {
+    from { opacity: 1; }
+    to { opacity: 0; }
+}
+
+@keyframes debugLogIn {
+    from { opacity: 0; transform: translateX(-8px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+.animate-msg-in {
+    animation: msgIn 0.25s ease;
+}
+
+.animate-toast-in {
+    animation: toastIn 0.3s ease, toastOut 0.3s ease 2.5s forwards;
+}
+
+.animate-debug-log-in {
+    animation: debugLogIn 0.2s ease;
+}

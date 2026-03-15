@@ -1,7 +1,11 @@
 #!/usr/bin/env node
 import { startServer } from './server.mjs';
-import { resolve } from 'path';
-import { spawn } from 'child_process';
+import { spawn, execSync } from 'child_process';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = fileURLToPath(new URL('.', import.meta.url));
 
 // Parse args
 const args = process.argv.slice(2);
@@ -13,6 +17,14 @@ const extensionDir = process.cwd();
 
 console.log(`\n📦 Starting Flux Sandbox for extension in ${extensionDir}`);
 
+// Check if Vite build exists
+const viteDist = join(__dirname, 'dist', 'index.html');
+if (!existsSync(viteDist)) {
+  console.log('[Sandbox] Building Vite app...');
+  execSync('npm run build', { cwd: __dirname, stdio: 'inherit' });
+}
+
+// Start flux-build watch for the extension
 const builder = spawn('flux-build', ['--watch'], {
   stdio: 'inherit',
   cwd: extensionDir,

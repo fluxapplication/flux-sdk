@@ -69,9 +69,28 @@ export async function startServer(port, extensionDir) {
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
   const reactions = []; // In-memory reactions storage
 
+  function safeSseWrite(client, data) {
+    try {
+      if (!client.res.writableEnded) {
+        client.res.write(data);
+      }
+    } catch (e) {
+      clients.delete(client);
+      debugClients.delete(client);
+    }
+  }
+
+  function broadcastMessage(msg) {
+    const data = `data: ${JSON.stringify(msg)}\n\n`;
+    for (const client of clients) {
+      safeSseWrite(client, data);
+    }
+  }
+
   function broadcastDebugLog(log) {
+    const data = `data: ${JSON.stringify(log)}\n\n`;
     for (const client of debugClients) {
-      client.res.write(`data: ${JSON.stringify(log)}\n\n`);
+      safeSseWrite(client, data);
     }
   }
 
@@ -191,7 +210,7 @@ export async function startServer(port, extensionDir) {
         sandboxSettings.messages = messages.slice(-500);
         persistSettings();
         for (const client of clients) {
-          client.res.write(`data: ${JSON.stringify(msg)}\n\n`);
+          safeSseWrite(client, `data: ${JSON.stringify(msg)}\n\n`);
         }
       },
       sendDirectMessage: async (userId, content) => {
@@ -213,7 +232,7 @@ export async function startServer(port, extensionDir) {
         persistSettings();
         
         for (const client of clients) {
-          client.res.write(`data: ${JSON.stringify({ type: 'dm:created', ...dm })}\n\n`);
+          safeSseWrite(client, `data: ${JSON.stringify({ type: 'dm:created', ...dm })}\n\n`);
         }
       },
       getMessages: async (channelId, limit = 50) => {
@@ -236,7 +255,7 @@ export async function startServer(port, extensionDir) {
           const idx = reactions.indexOf(existing);
           reactions.splice(idx, 1);
           for (const client of clients) {
-            client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
+            safeSseWrite(client, `data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
           }
           const msg = messages.find(m => m.id === messageId);
           if (reactionHandler && msg) {
@@ -262,7 +281,7 @@ export async function startServer(port, extensionDir) {
         };
         reactions.push(reaction);
         for (const client of clients) {
-          client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+          safeSseWrite(client, `data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
         }
         const msg = messages.find(m => m.id === messageId);
         console.log(`[Sandbox] Reaction added. msg:`, msg, 'handler:', !!reactionHandler);
@@ -346,7 +365,7 @@ export async function startServer(port, extensionDir) {
       } else if (filename === 'bundle.js' || filename === 'manifest.json') {
         console.log(`[Sandbox] Detected frontend change, triggering browser reload...`);
         for (const client of clients) {
-          client.res.write(`data: ${JSON.stringify({ type: 'reload' })}\n\n`);
+          safeSseWrite(client, `data: ${JSON.stringify({ type: 'reload' })}\n\n`);
         }
       }
     }, 200);
@@ -557,7 +576,7 @@ export async function startServer(port, extensionDir) {
             const idx = reactions.indexOf(existing);
             reactions.splice(idx, 1);
             for (const client of clients) {
-              client.res.write(`data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
+              safeSseWrite(client, `data: ${JSON.stringify({ type: 'reaction:removed', messageId, reactionId: existing.id })}\n\n`);
             }
             const msg = messages.find(m => m.id === messageId);
             if (reactionHandler && msg) {
@@ -583,7 +602,7 @@ export async function startServer(port, extensionDir) {
             };
             reactions.push(reaction);
             for (const client of clients) {
-              client.res.write(`data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
+              safeSseWrite(client, `data: ${JSON.stringify({ type: 'reaction:added', messageId, reaction })}\n\n`);
             }
             const msg = messages.find(m => m.id === messageId);
             console.log(`[Sandbox] Reaction added. msg:`, msg, 'handler:', !!reactionHandler);
@@ -725,18 +744,34 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
-    // Serve sandbox static assets (styles.css, require-shim.js, sandbox.js)
-    const sandboxAssets = {
-      '/styles.css': { file: 'styles.css', type: 'text/css' },
-      '/require-shim.js': { file: 'require-shim.js', type: 'application/javascript' },
-      '/json-editor.js': { file: 'json-editor.js', type: 'application/javascript' },
-      '/sandbox.js': { file: 'sandbox.js', type: 'application/javascript' },
-    };
-    if (sandboxAssets[url.pathname]) {
-      const asset = sandboxAssets[url.pathname];
-      const p = path.join(__dirname, asset.file);
+    // Serve Vite build assets (React app)
+    const distDir = path.join(__dirname, 'dist');
+    if (url.pathname.startsWith('/assets/')) {
+      const assetPath = path.join(distDir, url.pathname);
+      if (fs.existsSync(assetPath)) {
+        const ext = path.extname(assetPath);
+        const contentTypes = {
+          '.js': 'application/javascript',
+          '.css': 'text/css',
+          '.html': 'text/html',
+          '.map': 'application/json',
+          '.woff': 'font/woff',
+          '.woff2': 'font/woff2',
+        };
+        res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'application/octet-stream' });
+        fs.createReadStream(assetPath).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve extension bundle.js (from extension dist)
+    if (url.pathname === '/bundle.js') {
+      const p = path.join(extensionDir, 'dist', 'bundle.js');
       if (fs.existsSync(p)) {
-        res.writeHead(200, { 'Content-Type': asset.type });
+        res.writeHead(200, { 'Content-Type': 'application/javascript' });
         fs.createReadStream(p).pipe(res);
       } else {
         res.writeHead(404);
@@ -745,19 +780,72 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
-    // Serve UI index.html
+    // Serve extension CSS
+    if (url.pathname === '/bundle.css') {
+      const p = path.join(extensionDir, 'dist', 'bundle.css');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve extension.css (source styles - fallback)
+    if (url.pathname === '/extension.css') {
+      const p = path.join(extensionDir, 'extension.css');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve manifest.json
+    if (url.pathname === '/manifest.json') {
+      const p = path.join(extensionDir, 'manifest.json');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve icon.png
+    if (url.pathname === '/icon.png') {
+      const p = path.join(extensionDir, 'dist', 'icon.png');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'image/png' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve Vite index.html for all other routes (SPA)
     if (url.pathname === '/') {
-      const htmlPath = path.join(__dirname, 'index.html');
+      const htmlPath = path.join(distDir, 'index.html');
       if (fs.existsSync(htmlPath)) {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         fs.createReadStream(htmlPath).pipe(res);
       } else {
         res.writeHead(404);
-        res.end('UI not found');
+        res.end('Vite build not found. Run npm run build first.');
       }
       return;
     }
 
+    // 404 for unknown routes
     res.writeHead(404);
     res.end('Not found');
   });
