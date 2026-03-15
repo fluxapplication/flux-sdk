@@ -2,6 +2,44 @@ import { useState, useRef, useEffect } from 'react'
 import Picker from '@emoji-mart/react'
 import data from '@emoji-mart/data'
 
+interface ExtensionContext {
+  workspaceId: string
+  currentUserId: string
+  storage: {
+    get: (key: string) => Promise<unknown>
+    set: (key: string, value: unknown) => Promise<void>
+    delete: (key: string) => Promise<void>
+    listKeys: () => Promise<string[]>
+  }
+  ai: {
+    complete: (messages: { role: string; content: string }[], options?: object) => Promise<string>
+  }
+  users: {
+    list: () => Promise<User[]>
+    get: (userId: string) => Promise<User | null>
+    getRole: (userId: string) => Promise<string | null>
+    getCurrentUserRole: () => Promise<string>
+  }
+  messages: {
+    sendMessage: (channelId: string, content: string) => Promise<void>
+    sendDirectMessage: (userId: string, content: string) => Promise<void>
+    getMessages: (channelId: string, limit?: number) => Promise<Message[]>
+    addReaction: (messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>
+    getReactions: (messageId: string) => Promise<Reaction[]>
+  }
+  frontend: {
+    channels: { id: string; name: string }[]
+    serverUrl: string
+    getUserNameById: (userId: string) => Promise<string | null>
+    render: (element: React.ReactElement) => void
+    renderSettings: (element: React.ReactElement) => void
+  }
+  backend?: {
+    onMessage: (handler: (event: { id: string; content: string; userId: string; channelId: string; workspaceId: string }) => void) => void
+    onReaction: (handler: (event: { type: string; messageId: string; reaction: Reaction }) => void) => void
+  }
+}
+
 interface User {
   id: string
   name: string
@@ -42,10 +80,13 @@ function renderContentWithMentions(content: string, users: User[]) {
   })
 }
 
-export function Message({ message, onReaction, users }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[] }) {
+export function Message({ message, onReaction, users, messageRenderers = [], currentUserId }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[]; messageRenderers?: MessageRenderer[]; currentUserId?: string }) {
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const messageRef = useRef<HTMLDivElement>(null)
+  
+  const matchedRenderer = messageRenderers?.find(r => r.match(message.content))
+  const RendererComponent = matchedRenderer?.component
   
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -79,9 +120,13 @@ export function Message({ message, onReaction, users }: { message: Message; onRe
         className="max-w-[85%] px-3.5 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700 animate-msg-in cursor-pointer hover:border-zinc-600 transition-colors"
       >
         <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
-        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-          {renderContentWithMentions(message.content, users)}
-        </div>
+        {RendererComponent && currentUserId ? (
+          <RendererComponent message={message} ctx={window.__ctx__} currentUserId={currentUserId} />
+        ) : (
+          <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+            {renderContentWithMentions(message.content, users)}
+          </div>
+        )}
         
         <div className="flex items-center gap-1 mt-2 relative">
           {message.reactions?.map((r) => (
@@ -120,16 +165,22 @@ export function Message({ message, onReaction, users }: { message: Message; onRe
   )
 }
 
+interface MessageRenderer {
+  match: (content: string) => boolean
+  component: React.ComponentType<{ message: Message; ctx: ExtensionContext; currentUserId: string }>
+}
+
 interface ChatTabProps {
   messages: Message[]
   currentUserId: string
   users: User[]
   commands?: { name: string; description: string; usage: string }[]
+  messageRenderers?: MessageRenderer[]
   onReaction: (messageId: string, emoji: string) => void
   onSendMessage: (content: string) => void
 }
 
-export function ChatTab({ messages, currentUserId, users, commands = [], onReaction, onSendMessage }: ChatTabProps) {
+export function ChatTab({ messages, currentUserId, users, commands = [], messageRenderers = [], onReaction, onSendMessage }: ChatTabProps) {
   const [inputValue, setInputValue] = useState('')
   const [showMentionPicker, setShowMentionPicker] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -301,6 +352,8 @@ export function ChatTab({ messages, currentUserId, users, commands = [], onReact
             message={msg} 
             onReaction={onReaction}
             users={users}
+            messageRenderers={messageRenderers}
+            currentUserId={currentUserId}
           />
         ))}
       </div>

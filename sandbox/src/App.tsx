@@ -66,6 +66,10 @@ declare global {
       ExtensionPanel?: React.ComponentType<{ ctx: ExtensionContext; currentUserId: string }>
       ExtensionPage?: React.ComponentType<{ ctx: ExtensionContext; currentUserId: string }>
       sidebarItem?: { icon: string; label: string }
+      messageRenderers?: {
+        match: (content: string) => boolean
+        component: React.ComponentType<{ message: Message; ctx: ExtensionContext; currentUserId: string }>
+      }[]
     }
     __ctx__: ExtensionContext
     ReactJsxRuntime: typeof import('react/jsx-runtime')
@@ -104,6 +108,10 @@ export default function App() {
   const [debugTab, setDebugTab] = useState<'ext-logs' | 'api-calls'>('ext-logs')
   const [extensionLoaded, setExtensionLoaded] = useState(false)
   const [extensionInfo, setExtensionInfo] = useState<{hasPage: boolean, hasPanel: boolean}>({hasPage: false, hasPanel: false})
+  const [messageRenderers, setMessageRenderers] = useState<{
+    match: (content: string) => boolean
+    component: React.ComponentType<{ message: Message; ctx: ExtensionContext; currentUserId: string }>
+  }[]>([])
   
   const uiMountRef = useRef<HTMLDivElement>(null)
   const settingsMountRef = useRef<HTMLDivElement>(null)
@@ -143,6 +151,10 @@ export default function App() {
           hasPage: !!exported?.ExtensionPage,
           hasPanel: !!exported?.ExtensionPanel
         })
+        
+        if (exported?.messageRenderers && Array.isArray(exported.messageRenderers)) {
+          setMessageRenderers(exported.messageRenderers)
+        }
         
         window.__ctx__ = {
           workspaceId: 'sandbox-workspace',
@@ -493,6 +505,7 @@ export default function App() {
             currentUserId={currentUserId}
             users={users}
             commands={extensionCommands}
+            messageRenderers={messageRenderers}
             onReaction={handleReaction}
             onSendMessage={sendMessage}
           />
