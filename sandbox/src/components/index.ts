@@ -1,4 +1,5 @@
 export { Icons } from './Icons'
+export * as api from './api'
 export { ChatTab, Message } from './ChatTab'
 export { AppUITab } from './AppUITab'
 export { SettingsTab } from './SettingsTab'

@@ -5,44 +5,12 @@ import * as lucideReact from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { Icons } from './components/Icons'
 import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab } from './components'
+import { api, User, Message, Reaction, DirectMessage } from './components/api'
 
 window.React = React
 window.ReactDOM = ReactDOM as typeof window.ReactDOM
 window.ReactJsxRuntime = ReactJsxRuntime
 window.lucideReact = lucideReact
-
-interface User {
-  id: string
-  name: string
-  role: string
-}
-
-interface Message {
-  id: string
-  content: string
-  userId: string
-  user: { id: string; name: string }
-  createdAt: string
-  reactions?: Reaction[]
-}
-
-interface Reaction {
-  id: string
-  messageId: string
-  emoji: string
-  userId: string
-  user: { id: string; name: string }
-}
-
-interface DirectMessage {
-  id: string
-  senderId: string
-  recipientId: string
-  content: string
-  createdAt: string
-  sender: { id: string; name: string }
-  recipient: { id: string; name: string }
-}
 
 interface ExtensionContext {
   workspaceId: string
@@ -183,11 +151,7 @@ export default function App() {
             set: async (key: string, value: unknown) => {
               const newStorage = { ...storage, [key]: value }
               setStorage(newStorage)
-              await fetch('/api/storage', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ key, value })
-              })
+              await api.storage.set(key, value)
             },
             delete: async (key: string) => {
               const newStorage = { ...storage }
@@ -328,8 +292,7 @@ export default function App() {
   }, [activeTab, extensionLoaded, extensionInfo])
 
   useEffect(() => {
-    fetch('/api/users')
-      .then(r => r.json())
+    api.users.list()
       .then(data => {
         setUsers(data)
         if (data.length > 0) {
@@ -338,8 +301,7 @@ export default function App() {
       })
       .catch(e => console.error('[Sandbox] Failed to fetch users:', e))
     
-    fetch('/api/current-user')
-      .then(r => r.json())
+    api.users.getCurrent()
       .then(data => {
         if (data.currentUserId) {
           setCurrentUserId(data.currentUserId)
@@ -348,26 +310,22 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    fetch('/api/messages')
-      .then(r => r.json())
+    api.messages.list()
       .then(data => setMessages(data))
   }, [])
 
   useEffect(() => {
-    fetch('/api/storage/all')
-      .then(r => r.json())
+    api.storage.getAll()
       .then(data => setStorage(data))
   }, [])
 
   useEffect(() => {
-    fetch('/api/direct-messages')
-      .then(r => r.json())
+    api.directMessages.list()
       .then(data => setDirectMessages(data))
   }, [])
 
   useEffect(() => {
-    fetch('/manifest.json')
-      .then(r => r.json())
+    api.manifest.get()
       .then(data => {
         setExtensionName(data.name || 'Extension')
         setExtensionSlug(data.slug || 'extension')
@@ -375,25 +333,24 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const eventSource = new EventSource('/api/events')
-    eventSource.onmessage = (e) => {
-      const data = JSON.parse(e.data)
-      if (data.type === 'reaction:added' || data.type === 'reaction:removed') {
+    const unsubscribe = api.events.subscribe((data) => {
+      const eventData = data as { type?: string; messageId?: string; reaction?: Reaction; reactionId?: string }
+      if (eventData.type === 'reaction:added' || eventData.type === 'reaction:removed') {
         setMessages(prev => prev.map(m => {
-          if (m.id === data.messageId) {
-            if (data.type === 'reaction:added') {
-              return { ...m, reactions: [...(m.reactions || []), data.reaction] }
+          if (m.id === eventData.messageId) {
+            if (eventData.type === 'reaction:added') {
+              return { ...m, reactions: [...(m.reactions || []), eventData.reaction!] }
             } else {
-              return { ...m, reactions: (m.reactions || []).filter((r: Reaction) => r.id !== data.reactionId) }
+              return { ...m, reactions: (m.reactions || []).filter((r) => r.id !== eventData.reactionId) }
             }
           }
           return m
         }))
-      } else if (!data.type) {
-        setMessages(prev => [...prev, data])
+      } else if (!eventData.type) {
+        setMessages(prev => [...prev, eventData as Message])
       }
-    }
-    return () => eventSource.close()
+    })
+    return unsubscribe
   }, [])
 
   useEffect(() => {
@@ -425,19 +382,11 @@ export default function App() {
   }, [debugPaused])
 
   const handleReaction = async (messageId: string, emoji: string) => {
-    await fetch(`/api/sandbox-channel/${messageId}/reactions`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emoji })
-    })
+    await api.messages.addReaction('sandbox-channel', messageId, emoji)
   }
 
   const sendMessage = async (content: string) => {
-    await fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content, userId: currentUserId })
-    })
+    await api.messages.send(content, currentUserId)
     
     const user = users.find(u => u.id === currentUserId)
     const msg: Message = {
@@ -453,27 +402,18 @@ export default function App() {
 
   const handleCurrentUserChange = async (userId: string) => {
     setCurrentUserId(userId)
-    await fetch('/api/current-user', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ currentUserId: userId })
-    })
+    await api.users.setCurrent(userId)
   }
 
   const refreshStorage = () => {
-    fetch('/api/storage/all')
-      .then(r => r.json())
+    api.storage.getAll()
       .then(data => setStorage(data))
   }
 
   const saveStorage = async () => {
     try {
       const data = JSON.parse(JSON.stringify(storage))
-      await fetch('/api/storage/all', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      })
+      await api.storage.setAll(data)
       alert('Storage saved!')
     } catch (e) {
       alert('Invalid JSON')
