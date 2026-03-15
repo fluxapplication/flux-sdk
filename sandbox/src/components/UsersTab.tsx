@@ -109,20 +109,20 @@ export function UsersTab({ users, currentUserId, onCurrentUserChange, onUsersCha
             + Add User
           </button>
         </div>
-        <div className="px-5 py-4 flex flex-col gap-2">
+        <div className="px-5 py-4 flex flex-col gap-2 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
           {users.map(user => (
-            <div key={user.id} className="flex items-center justify-between px-4 py-3 bg-zinc-800 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-violet-600/20 flex items-center justify-center text-violet-400 font-medium">
+            <div key={user.id} className="flex items-center justify-between px-4 py-3 bg-zinc-800 rounded-lg gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-full bg-violet-600/20 flex items-center justify-center text-violet-400 font-medium flex-shrink-0">
                   {user.name.charAt(0)}
                 </div>
-                <div>
-                  <div className="font-medium">{user.name}</div>
-                  <div className="text-xs text-zinc-500">{user.id}</div>
+                <div className="min-w-0">
+                  <div className="font-medium truncate">{user.name}</div>
+                  <div className="text-xs text-zinc-500 truncate">{user.id}</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="px-2 py-1 text-xs font-medium rounded bg-zinc-700 text-zinc-400">{user.role}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <span className="px-2 py-1 text-xs font-medium rounded bg-zinc-700 text-zinc-400 whitespace-nowrap">{user.role}</span>
                 <button
                   onClick={() => handleOpenModal(user)}
                   className="p-1.5 rounded hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors"
