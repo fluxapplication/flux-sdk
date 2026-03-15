@@ -1,3 +1,11 @@
+import { Icons } from './Icons'
+
+interface User {
+  id: string
+  name: string
+  role: string
+}
+
 interface DirectMessage {
   id: string
   senderId: string
@@ -8,13 +16,29 @@ interface DirectMessage {
   recipient: { id: string; name: string }
 }
 
-import { Icons } from './Icons'
+function renderContentWithMentions(content: string, users: User[]) {
+  const parts = content.split(/(<@[^>]+>)/g)
+  return parts.map((part, i) => {
+    const match = part.match(/<@([^>]+)>/)
+    if (match) {
+      const userId = match[1]
+      const user = users.find(u => u.id === userId)
+      return (
+        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30">
+          @{user?.name || userId}
+        </span>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
 
 interface DMsTabProps {
   directMessages: DirectMessage[]
+  users: User[]
 }
 
-export function DMsTab({ directMessages }: DMsTabProps) {
+export function DMsTab({ directMessages, users }: DMsTabProps) {
   return (
     <div className="flex-1 overflow-y-auto p-6">
       <h2 className="text-lg font-bold flex items-center gap-2 mb-5">
@@ -38,7 +62,7 @@ export function DMsTab({ directMessages }: DMsTabProps) {
                   <span className="font-medium text-zinc-200">{dm.recipient.name}</span>
                   <span className="text-xs text-zinc-500 ml-auto">{dm.createdAt ? new Date(dm.createdAt).toLocaleString() : ''}</span>
                 </div>
-                <div className="text-sm text-zinc-400">{dm.content}</div>
+                <div className="text-sm text-zinc-400">{renderContentWithMentions(dm.content, users)}</div>
               </div>
             ))}
           </div>

@@ -533,6 +533,7 @@ export default function App() {
         {activeTab === 'dms' && (
           <DMsTab 
             directMessages={directMessages}
+            users={users}
           />
         )}
         
