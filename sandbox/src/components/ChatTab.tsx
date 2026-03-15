@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
+import Picker from '@emoji-mart/react'
+import data from '@emoji-mart/data'
 
 interface User {
   id: string
@@ -41,10 +43,18 @@ function renderContentWithMentions(content: string, users: User[]) {
 }
 
 export function Message({ message, onReaction, users }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[] }) {
-  const [showReactions, setShowReactions] = useState(false)
-  const [reactions, setReactions] = useState<Reaction[]>(message.reactions || [])
+  const [showPicker, setShowPicker] = useState(false)
+  const pickerRef = useRef<HTMLDivElement>(null)
   
-  const emojis = ['👍', '❤️', '😂', '😮', '😢', '🎉']
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setShowPicker(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [])
 
   return (
     <div className="flex justify-start">
@@ -54,36 +64,34 @@ export function Message({ message, onReaction, users }: { message: Message; onRe
           {renderContentWithMentions(message.content, users)}
         </div>
         
-        <div className="flex items-center gap-1 mt-2">
-          {reactions.map((r) => (
+        <div className="flex items-center gap-1 mt-2 relative">
+          {message.reactions?.map((r) => (
             <button
               key={r.id}
               onClick={() => onReaction(message.id, r.emoji)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-zinc-700/50 hover:bg-zinc-700 transition-colors"
+              className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-zinc-700/50 hover:bg-zinc-700 transition-colors"
             >
-              <span>{r.emoji}</span>
+              {r.emoji}
             </button>
           ))}
           <button
-            onClick={() => setShowReactions(!showReactions)}
+            onClick={() => setShowPicker(!showPicker)}
             className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 transition-colors"
           >
-            +
+            😀
           </button>
-          {showReactions && (
-            <div className="absolute mt-8 flex gap-1 p-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50">
-              {emojis.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => {
-                    onReaction(message.id, emoji)
-                    setShowReactions(false)
-                  }}
-                  className="p-1 hover:bg-zinc-700 rounded transition-colors"
-                >
-                  {emoji}
-                </button>
-              ))}
+          {showPicker && (
+            <div ref={pickerRef} className="absolute mt-2 z-50">
+              <Picker
+                data={data}
+                onEmojiSelect={(e: { native: string }) => {
+                  onReaction(message.id, e.native)
+                  setShowPicker(false)
+                }}
+                theme="dark"
+                previewPosition="none"
+                skinTonePosition="none"
+              />
             </div>
           )}
         </div>
