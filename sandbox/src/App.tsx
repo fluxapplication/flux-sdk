@@ -163,8 +163,26 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   )
 }
 
+// Helper to render content with mentions
+function renderContentWithMentions(content: string, users: User[]) {
+  const parts = content.split(/(<@[^>]+>)/g)
+  return parts.map((part, i) => {
+    const match = part.match(/<@([^>]+)>/)
+    if (match) {
+      const userId = match[1]
+      const user = users.find(u => u.id === userId)
+      return (
+        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30">
+          @{user?.name || userId}
+        </span>
+      )
+    }
+    return <span key={i}>{part}</span>
+  })
+}
+
 // Message component
-function Message({ message, currentUserId, onReaction }: { message: Message; currentUserId: string; onReaction: (messageId: string, emoji: string) => void }) {
+function Message({ message, currentUserId, onReaction, users }: { message: Message; currentUserId: string; onReaction: (messageId: string, emoji: string) => void; users: User[] }) {
   const isUser = message.userId === currentUserId || message.userId === 'ext-bot'
   
   const [showReactions, setShowReactions] = useState(false)
@@ -182,7 +200,9 @@ function Message({ message, currentUserId, onReaction }: { message: Message; cur
         {!isUser && (
           <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
         )}
-        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">{message.content}</div>
+        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+          {renderContentWithMentions(message.content, users)}
+        </div>
         
         {/* Reactions */}
         <div className="flex items-center gap-1 mt-2">
@@ -221,7 +241,7 @@ function Message({ message, currentUserId, onReaction }: { message: Message; cur
         </div>
         
         <div className="text-[10px] text-zinc-500 mt-1">
-          {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
         </div>
       </div>
     </div>
@@ -240,10 +260,18 @@ export default function App() {
   const [storage, setStorage] = useState<Record<string, unknown>>({})
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([])
   const [debugLogs, setDebugLogs] = useState<{ type: string; args: string[]; source: string }[]>([])
+  const [apiCalls, setApiCalls] = useState<{ method: string; url: string; timestamp: string }[]>([])
   const [debugPaused, setDebugPaused] = useState(false)
   const [debugTab, setDebugTab] = useState<'ext-logs' | 'api-calls'>('ext-logs')
   const [extensionLoaded, setExtensionLoaded] = useState(false)
   const [extensionInfo, setExtensionInfo] = useState<{hasPage: boolean, hasPanel: boolean}>({hasPage: false, hasPanel: false})
+  
+  // Mentions state
+  const [showMentionPicker, setShowMentionPicker] = useState(false)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionUserIndex, setMentionUserIndex] = useState(0)
+  const [mentionFilter, setMentionFilter] = useState<User[]>([])
+  const mentionInputRef = useRef<HTMLTextAreaElement>(null)
   
   const chatRef = useRef<HTMLDivElement>(null)
   const uiMountRef = useRef<HTMLDivElement>(null)
@@ -557,6 +585,25 @@ export default function App() {
     return () => eventSource.close()
   }, [])
 
+  // Track API calls
+  useEffect(() => {
+    const originalFetch = window.fetch
+    window.fetch = async (...args) => {
+      const [url, options] = args
+      const urlStr = typeof url === 'string' ? url : url.toString()
+      if (urlStr.startsWith('/api/')) {
+        const method = options?.method || 'GET'
+        setApiCalls(prev => [...prev.slice(-100), {
+          method,
+          url: urlStr,
+          timestamp: new Date().toLocaleTimeString()
+        }])
+      }
+      return originalFetch(...args)
+    }
+    return () => { window.fetch = originalFetch }
+  }, [])
+
   // SSE for debug logs
   useEffect(() => {
     const eventSource = new EventSource('/api/debug/logs')
@@ -610,10 +657,74 @@ export default function App() {
     setUsers(prev => [...prev, { id, name, role }])
   }
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const value = e.target.value
+    setInputValue(value)
+    
+    // Check for @ mentions
+    const cursorPos = e.target.selectionStart
+    const textBeforeCursor = value.slice(0, cursorPos)
+    const lastAtPos = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtPos !== -1) {
+      const textAfterAt = textBeforeCursor.slice(lastAtPos + 1)
+      // Check if there's a space after @ (meaning mention is complete)
+      if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
+        const query = textAfterAt.toLowerCase()
+        const filtered = users.filter(u => u.name.toLowerCase().includes(query))
+        if (filtered.length > 0) {
+          setMentionQuery(query)
+          setMentionFilter(filtered)
+          setMentionUserIndex(0)
+          setShowMentionPicker(true)
+          return
+        }
+      }
+    }
+    setShowMentionPicker(false)
+  }
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (showMentionPicker) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setMentionUserIndex(prev => (prev + 1) % mentionFilter.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setMentionUserIndex(prev => (prev - 1 + mentionFilter.length) % mentionFilter.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (mentionFilter[mentionUserIndex]) {
+          e.preventDefault()
+          insertMention(mentionFilter[mentionUserIndex])
+          return
+        }
+      }
+      if (e.key === 'Escape') {
+        setShowMentionPicker(false)
+        return
+      }
+    }
+    
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
+    }
+  }
+
+  const insertMention = (user: User) => {
+    const cursorPos = mentionInputRef.current?.selectionStart || inputValue.length
+    const textBeforeCursor = inputValue.slice(0, cursorPos)
+    const lastAtPos = textBeforeCursor.lastIndexOf('@')
+    
+    if (lastAtPos !== -1) {
+      const before = inputValue.slice(0, lastAtPos)
+      const after = inputValue.slice(cursorPos)
+      setInputValue(`${before}<@${user.id}> ${after}`)
+      setShowMentionPicker(false)
     }
   }
 
@@ -712,16 +823,18 @@ export default function App() {
                   message={msg} 
                   currentUserId={currentUserId}
                   onReaction={handleReaction}
+                  users={users}
                 />
               ))}
             </div>
             
-            <div className="p-4 px-5 bg-zinc-900 border-t border-zinc-800 flex gap-2.5 items-end">
+            <div className="p-4 px-5 bg-zinc-900 border-t border-zinc-800 flex gap-2.5 items-end relative">
               <textarea
+                ref={mentionInputRef}
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
+                onChange={handleInputChange}
                 onKeyDown={handleKeyDown}
-                placeholder="Type a message to the channel..."
+                placeholder="Type a message to the channel... (@ to mention)"
                 rows={1}
                 className="flex-1 px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 outline-none text-sm resize-none transition-colors focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
               />
@@ -731,6 +844,27 @@ export default function App() {
               >
                 Send
               </button>
+              
+              {/* Mention Picker */}
+              {showMentionPicker && mentionFilter.length > 0 && (
+                <div className="absolute bottom-full left-4 mb-2 w-64 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+                  {mentionFilter.map((user, idx) => (
+                    <button
+                      key={user.id}
+                      onClick={() => insertMention(user)}
+                      className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
+                        idx === mentionUserIndex ? 'bg-violet-600' : 'hover:bg-zinc-700'
+                      }`}
+                    >
+                      <div className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center text-xs">
+                        {user.name.charAt(0)}
+                      </div>
+                      <span className="text-sm">{user.name}</span>
+                      <span className="text-xs text-zinc-500 ml-auto">{user.id}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -811,23 +945,47 @@ export default function App() {
                 <Icons.Database />
                 Storage Editor
               </h2>
-              <button
-                onClick={() => {
-                  fetch('/api/storage/all')
-                    .then(r => r.json())
-                    .then(setStorage)
-                }}
-                className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-              >
-                ↻ Refresh
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    fetch('/api/storage/all')
+                      .then(r => r.json())
+                      .then(data => setStorage(data))
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
+                >
+                  ↻ Refresh
+                </button>
+                <button
+                  onClick={async () => {
+                    try {
+                      const data = JSON.parse(JSON.stringify(storage))
+                      await fetch('/api/storage/all', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                      })
+                      alert('Storage saved!')
+                    } catch (e) {
+                      alert('Invalid JSON')
+                    }
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-medium transition-colors"
+                >
+                  Save
+                </button>
+              </div>
             </div>
             
-            <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <pre className="p-4 text-sm text-zinc-300 overflow-auto h-full font-mono">
-                {JSON.stringify(storage, null, 2)}
-              </pre>
-            </div>
+            <textarea
+              value={JSON.stringify(storage, null, 2)}
+              onChange={(e) => {
+                try {
+                  setStorage(JSON.parse(e.target.value))
+                } catch {}
+              }}
+              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-300 font-mono outline-none resize-none"
+            />
           </div>
         )}
         
@@ -910,7 +1068,7 @@ export default function App() {
                         <span className="font-medium text-zinc-200">{dm.sender.name}</span>
                         <span className="text-zinc-500">→</span>
                         <span className="font-medium text-zinc-200">{dm.recipient.name}</span>
-                        <span className="text-xs text-zinc-500 ml-auto">{new Date(dm.createdAt).toLocaleString()}</span>
+                        <span className="text-xs text-zinc-500 ml-auto">{dm.createdAt ? new Date(dm.createdAt).toLocaleString() : ''}</span>
                       </div>
                       <div className="text-sm text-zinc-400">{dm.content}</div>
                     </div>
@@ -969,20 +1127,30 @@ export default function App() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-3 font-mono text-xs">
-              {debugLogs.map((log, i) => (
-                <div 
-                  key={i} 
-                  className={`p-2 mb-1 rounded bg-zinc-900 border-l-2 animate-debug-log-in ${
-                    log.type === 'error' ? 'border-red-500 bg-red-950/30' :
-                    log.type === 'warn' ? 'border-amber-500 bg-amber-950/30' :
-                    log.type === 'info' ? 'border-blue-500' :
-                    'border-green-500'
-                  }`}
-                >
-                  <span className="text-zinc-500 mr-2">[{log.source}]</span>
-                  <span className="text-zinc-400">{log.args.join(' ')}</span>
-                </div>
-              ))}
+              {debugTab === 'ext-logs' ? (
+                debugLogs.map((log, i) => (
+                  <div 
+                    key={i} 
+                    className={`p-2 mb-1 rounded bg-zinc-900 border-l-2 animate-debug-log-in ${
+                      log.type === 'error' ? 'border-red-500 bg-red-950/30' :
+                      log.type === 'warn' ? 'border-amber-500 bg-amber-950/30' :
+                      log.type === 'info' ? 'border-blue-500' :
+                      'border-green-500'
+                    }`}
+                  >
+                    <span className="text-zinc-500 mr-2">[{log.source}]</span>
+                    <span className="text-zinc-400">{log.args.join(' ')}</span>
+                  </div>
+                ))
+              ) : (
+                apiCalls.map((call, i) => (
+                  <div key={i} className="p-2 mb-1 rounded bg-zinc-900 border-l-2 border-blue-500">
+                    <span className="text-blue-400 mr-2">{call.method}</span>
+                    <span className="text-zinc-400">{call.url}</span>
+                    <span className="text-zinc-600 ml-2">{call.timestamp}</span>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
