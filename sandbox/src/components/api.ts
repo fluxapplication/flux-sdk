@@ -119,7 +119,7 @@ export const api = {
   },
 
   manifest: {
-    get: async (): Promise<{ name: string; slug: string }> => {
+    get: async (): Promise<{ name: string; slug: string; commands?: { name: string; description: string; usage: string }[] }> => {
       const res = await fetch('/manifest.json')
       return res.json()
     }

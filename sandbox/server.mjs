@@ -442,6 +442,12 @@ export async function startServer(port, extensionDir) {
           sandboxSettings.messages = messages.slice(-500); // Keep last 500 messages
           persistSettings();
           
+          // Broadcast user's message to all connected clients via SSE (before extension handler runs)
+          const userMsgForSSE = { ...event, user: sender, reactions: [] };
+          for (const client of clients) {
+            safeSseWrite(client, `data: ${JSON.stringify(userMsgForSSE)}\n\n`);
+          }
+          
           // Set current user for extensions to query
           currentUserId = data.userId;
           ctx.currentUserId = data.userId;

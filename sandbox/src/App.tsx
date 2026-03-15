@@ -95,6 +95,7 @@ export default function App() {
   const [currentUserId, setCurrentUserId] = useState('')
   const [extensionName, setExtensionName] = useState('Loading...')
   const [extensionSlug, setExtensionSlug] = useState('sandbox')
+  const [extensionCommands, setExtensionCommands] = useState<{ name: string; description: string; usage: string }[]>([])
   const [storage, setStorage] = useState<Record<string, unknown>>({})
   const [directMessages, setDirectMessages] = useState<DirectMessage[]>([])
   const [debugLogs, setDebugLogs] = useState<{ type: string; args: string[]; source: string }[]>([])
@@ -319,6 +320,7 @@ export default function App() {
       .then(data => {
         setExtensionName(data.name || 'Extension')
         setExtensionSlug(data.slug || 'extension')
+        setExtensionCommands(data.commands || [])
       })
   }, [])
 
@@ -392,17 +394,6 @@ export default function App() {
 
   const sendMessage = async (content: string) => {
     await api.messages.send(content, currentUserId)
-    
-    const user = users.find(u => u.id === currentUserId)
-    const msg: Message = {
-      id: `msg-${Date.now()}`,
-      content,
-      userId: currentUserId,
-      user: user || { id: currentUserId, name: 'Unknown' },
-      createdAt: new Date().toISOString(),
-      reactions: []
-    }
-    setMessages(prev => [...prev, msg])
   }
 
   const handleCurrentUserChange = async (userId: string) => {
@@ -501,6 +492,7 @@ export default function App() {
             messages={messages}
             currentUserId={currentUserId}
             users={users}
+            commands={extensionCommands}
             onReaction={handleReaction}
             onSendMessage={sendMessage}
           />

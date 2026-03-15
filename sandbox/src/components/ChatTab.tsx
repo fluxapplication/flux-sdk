@@ -124,16 +124,21 @@ interface ChatTabProps {
   messages: Message[]
   currentUserId: string
   users: User[]
+  commands?: { name: string; description: string; usage: string }[]
   onReaction: (messageId: string, emoji: string) => void
   onSendMessage: (content: string) => void
 }
 
-export function ChatTab({ messages, currentUserId, users, onReaction, onSendMessage }: ChatTabProps) {
+export function ChatTab({ messages, currentUserId, users, commands = [], onReaction, onSendMessage }: ChatTabProps) {
   const [inputValue, setInputValue] = useState('')
   const [showMentionPicker, setShowMentionPicker] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
   const [mentionUserIndex, setMentionUserIndex] = useState(0)
   const [mentionFilter, setMentionFilter] = useState<User[]>([])
+  const [showCommandPicker, setShowCommandPicker] = useState(false)
+  const [commandQuery, setCommandQuery] = useState('')
+  const [commandIndex, setCommandIndex] = useState(0)
+  const [commandFilter, setCommandFilter] = useState<{ name: string; description: string; usage: string }[]>([])
   const mentionInputRef = useRef<HTMLTextAreaElement>(null)
   const chatRef = useRef<HTMLDivElement>(null)
   const prevMessagesLength = useRef(messages.length)
@@ -153,6 +158,27 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
     const textBeforeCursor = value.slice(0, cursorPos)
     const lastAtPos = textBeforeCursor.lastIndexOf('@')
     
+    // Check for commands first (/)
+    const lastSlashPos = textBeforeCursor.lastIndexOf('/')
+    const isCommandInput = lastSlashPos !== -1 && (lastSlashPos === 0 || textBeforeCursor[lastSlashPos - 1] === ' ')
+    
+    if (isCommandInput && commands.length > 0) {
+      const textAfterSlash = textBeforeCursor.slice(lastSlashPos + 1)
+      if (!textAfterSlash.includes(' ') && !textAfterSlash.includes('\n')) {
+        const query = textAfterSlash.toLowerCase()
+        const filtered = commands.filter(cmd => cmd.name.toLowerCase().includes(query))
+        if (filtered.length > 0) {
+          setCommandQuery(query)
+          setCommandFilter(filtered)
+          setCommandIndex(0)
+          setShowCommandPicker(true)
+          setShowMentionPicker(false)
+          return
+        }
+      }
+    }
+    
+    // Check for mentions (@)
     if (lastAtPos !== -1) {
       const textAfterAt = textBeforeCursor.slice(lastAtPos + 1)
       if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
@@ -163,14 +189,42 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
           setMentionFilter(filtered)
           setMentionUserIndex(0)
           setShowMentionPicker(true)
+          setShowCommandPicker(false)
           return
         }
       }
     }
     setShowMentionPicker(false)
+    setShowCommandPicker(false)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Handle command picker
+    if (showCommandPicker) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setCommandIndex(prev => (prev + 1) % commandFilter.length)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setCommandIndex(prev => (prev - 1 + commandFilter.length) % commandFilter.length)
+        return
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        if (commandFilter[commandIndex]) {
+          e.preventDefault()
+          insertCommand(commandFilter[commandIndex])
+          return
+        }
+      }
+      if (e.key === 'Escape') {
+        setShowCommandPicker(false)
+        return
+      }
+    }
+    
+    // Handle mention picker
     if (showMentionPicker) {
       if (e.key === 'ArrowDown') {
         e.preventDefault()
@@ -214,6 +268,19 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
     }
   }
 
+  const insertCommand = (cmd: { name: string; description: string; usage: string }) => {
+    const cursorPos = mentionInputRef.current?.selectionStart || inputValue.length
+    const textBeforeCursor = inputValue.slice(0, cursorPos)
+    const lastSlashPos = textBeforeCursor.lastIndexOf('/')
+    
+    if (lastSlashPos !== -1) {
+      const before = inputValue.slice(0, lastSlashPos)
+      const after = inputValue.slice(cursorPos)
+      setInputValue(`${before}/${cmd.name} ${after}`)
+      setShowCommandPicker(false)
+    }
+  }
+
   const sendMessage = () => {
     if (!inputValue.trim()) return
     onSendMessage(inputValue)
@@ -244,7 +311,7 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
           value={inputValue}
           onChange={handleInputChange}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message to the channel... (@ to mention)"
+          placeholder="Type a message to the channel... (/ for commands, @ for mentions)"
           rows={1}
           className="flex-1 px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 outline-none text-sm resize-none transition-colors focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
         />
@@ -270,6 +337,23 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
                 </div>
                 <span className="text-sm">{user.name}</span>
                 <span className="text-xs text-zinc-500 ml-auto">{user.id}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {showCommandPicker && commandFilter.length > 0 && (
+          <div className="absolute bottom-full left-4 mb-2 w-72 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
+            {commandFilter.map((cmd, idx) => (
+              <button
+                key={cmd.name}
+                onClick={() => insertCommand(cmd)}
+                className={`w-full px-3 py-2 flex flex-col items-start text-left transition-colors ${
+                  idx === commandIndex ? 'bg-violet-600' : 'hover:bg-zinc-700'
+                }`}
+              >
+                <span className="text-sm font-medium">/{cmd.name}</span>
+                <span className="text-xs text-zinc-400">{cmd.description}</span>
               </button>
             ))}
           </div>
