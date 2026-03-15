@@ -47,6 +47,25 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ currentUserId })
       })
+    },
+    create: async (user: User): Promise<void> => {
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user)
+      })
+    },
+    update: async (user: User): Promise<void> => {
+      await fetch(`/api/users/${user.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(user)
+      })
+    },
+    delete: async (userId: string): Promise<void> => {
+      await fetch(`/api/users/${userId}`, {
+        method: 'DELETE'
+      })
     }
   },
 

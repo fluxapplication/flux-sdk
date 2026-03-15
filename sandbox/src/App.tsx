@@ -527,6 +527,7 @@ export default function App() {
             users={users}
             currentUserId={currentUserId}
             onCurrentUserChange={handleCurrentUserChange}
+            onUsersChange={setUsers}
           />
         )}
         
