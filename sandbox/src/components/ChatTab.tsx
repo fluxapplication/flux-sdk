@@ -45,6 +45,7 @@ function renderContentWithMentions(content: string, users: User[]) {
 export function Message({ message, onReaction, users }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[] }) {
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
+  const messageRef = useRef<HTMLDivElement>(null)
   
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -56,9 +57,27 @@ export function Message({ message, onReaction, users }: { message: Message; onRe
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const handleMessageClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('button')) return
+    if (e.button === 2) {
+      e.preventDefault()
+      setShowPicker(!showPicker)
+    }
+  }
+
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault()
+    setShowPicker(!showPicker)
+  }
+
   return (
     <div className="flex justify-start">
-      <div className="max-w-[75%] px-3.5 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700 animate-msg-in">
+      <div 
+        ref={messageRef}
+        onClick={handleMessageClick}
+        onContextMenu={handleContextMenu}
+        className="max-w-[85%] px-3.5 py-2.5 rounded-2xl bg-zinc-800 border border-zinc-700 animate-msg-in cursor-pointer hover:border-zinc-600 transition-colors"
+      >
         <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
         <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
           {renderContentWithMentions(message.content, users)}
@@ -68,18 +87,15 @@ export function Message({ message, onReaction, users }: { message: Message; onRe
           {message.reactions?.map((r) => (
             <button
               key={r.id}
-              onClick={() => onReaction(message.id, r.emoji)}
+              onClick={(e) => {
+                e.stopPropagation()
+                onReaction(message.id, r.emoji)
+              }}
               className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-zinc-700/50 hover:bg-zinc-700 transition-colors"
             >
               {r.emoji}
             </button>
           ))}
-          <button
-            onClick={() => setShowPicker(!showPicker)}
-            className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 transition-colors"
-          >
-            😀
-          </button>
           {showPicker && (
             <div ref={pickerRef} className="absolute mt-2 z-50">
               <Picker
@@ -120,11 +136,13 @@ export function ChatTab({ messages, currentUserId, users, onReaction, onSendMess
   const [mentionFilter, setMentionFilter] = useState<User[]>([])
   const mentionInputRef = useRef<HTMLTextAreaElement>(null)
   const chatRef = useRef<HTMLDivElement>(null)
+  const prevMessagesLength = useRef(messages.length)
 
   useEffect(() => {
-    if (chatRef.current) {
+    if (messages.length > prevMessagesLength.current && chatRef.current) {
       chatRef.current.scrollTop = chatRef.current.scrollHeight
     }
+    prevMessagesLength.current = messages.length
   }, [messages])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
