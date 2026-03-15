@@ -869,10 +869,27 @@ document
     reRenderApp();
   });
 
-/* ── Load extension bundle ── */
+/* ── Load extension bundle and CSS ── */
 const script = document.createElement("script");
 script.src = "/bundle.js";
 script.onload = async () => {
+  // Load extension CSS if exists (isolated styles)
+  fetch("/bundle.css")
+    .then((res) => {
+      if (res.ok) return res.text();
+      // Fallback to extension.css if bundle.css not found
+      return fetch("/extension.css").then((r) => (r.ok ? r.text() : null));
+    })
+    .then((css) => {
+      if (css) {
+        const style = document.createElement("style");
+        style.id = "extension-styles";
+        style.textContent = css;
+        document.head.appendChild(style);
+      }
+    })
+    .catch(() => {});
+
   await fetchUsers();
   await loadMessageHistory();
   await loadDirectMessages();

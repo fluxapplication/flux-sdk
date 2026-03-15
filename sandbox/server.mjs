@@ -672,6 +672,32 @@ export async function startServer(port, extensionDir) {
       }
       return;
     }
+
+    // Serve bundle.css (compiled extension styles)
+    if (url.pathname === '/bundle.css') {
+      const p = path.join(extensionDir, 'dist', 'bundle.css');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
+    // Serve extension.css (source styles - fallback)
+    if (url.pathname === '/extension.css') {
+      const p = path.join(extensionDir, 'extension.css');
+      if (fs.existsSync(p)) {
+        res.writeHead(200, { 'Content-Type': 'text/css' });
+        fs.createReadStream(p).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
     
     // Serve manifest.json
     if (url.pathname === '/manifest.json') {

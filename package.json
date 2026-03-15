@@ -24,5 +24,8 @@
   "license": "MIT",
   "dependencies": {
     "esbuild": "^0.27.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.1"
   }
 }

@@ -77,6 +77,7 @@ const backendFile = join(dir, "backend.ts")
 const manifestFile = join(dir, "manifest.json")
 const iconSrc = join(dir, "icon.png")
 const iconDest = join(distDir, "icon.png")
+const extensionCssFile = join(dir, "extension.css")
 
 console.log(`\n◆ Building ${name}…`)
 
@@ -113,6 +114,16 @@ async function run() {
   } else {
     writeFileSync(join(distDir, "bundle.js"), "")
     console.log("  ✓ bundle.js (empty)")
+  }
+
+  // Build extension CSS if extension.css exists
+  if (entryParts.length > 0 && existsSync(extensionCssFile)) {
+    try {
+      execSync(`npx @tailwindcss/cli -i extension.css -o dist/bundle.css --minify`, { cwd: dir, stdio: "pipe" })
+      console.log("  ✓ bundle.css")
+    } catch (e) {
+      console.warn("  ⚠ bundle.css (tailwindcss not available)")
+    }
   }
 
   let backendCtx;
@@ -156,7 +167,8 @@ async function run() {
     const zipFile = join(distDir, "bundle.zip")
     if (existsSync(zipFile)) rmSync(zipFile)
     const hasBackend = existsSync(backendFile)
-    const files = ["bundle.js", hasBackend && "backend.js", "manifest.json", "icon.png"].filter(Boolean).join(" ")
+    const hasCss = existsSync(join(distDir, "bundle.css"))
+    const files = ["bundle.js", hasBackend && "backend.js", hasCss && "bundle.css", "manifest.json", "icon.png"].filter(Boolean).join(" ")
     execSync(`zip -j bundle.zip ${files}`, { cwd: distDir })
     const kb = (readFileSync(zipFile).byteLength / 1024).toFixed(1)
     console.log(`  ✓ bundle.zip (${kb} KB)`)
