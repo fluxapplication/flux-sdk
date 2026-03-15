@@ -503,17 +503,12 @@ export default function App() {
         
         {activeTab === 'ui' && (
           <AppUITab 
-            extensionLoaded={extensionLoaded}
-            extensionInfo={extensionInfo}
-            currentUserId={currentUserId}
             uiMountRef={uiMountRef}
           />
         )}
         
         {activeTab === 'settings' && (
           <SettingsTab 
-            extensionLoaded={extensionLoaded}
-            extensionInfo={extensionInfo}
             settingsMountRef={settingsMountRef}
           />
         )}
