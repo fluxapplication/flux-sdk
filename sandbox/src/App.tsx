@@ -121,7 +121,10 @@ interface ExtensionContext {
     addReaction: (messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>
     getReactions: (messageId: string) => Promise<Reaction[]>
   }
-  frontend?: {
+  frontend: {
+    channels: { id: string; name: string }[]
+    serverUrl: string
+    getUserNameById: (userId: string) => Promise<string | null>
     render: (element: React.ReactElement) => void
     renderSettings: (element: React.ReactElement) => void
   }
@@ -239,17 +242,31 @@ export default function App() {
   const [debugLogs, setDebugLogs] = useState<{ type: string; args: string[]; source: string }[]>([])
   const [debugPaused, setDebugPaused] = useState(false)
   const [debugTab, setDebugTab] = useState<'ext-logs' | 'api-calls'>('ext-logs')
+  const [extensionLoaded, setExtensionLoaded] = useState(false)
+  const [extensionInfo, setExtensionInfo] = useState<{hasPage: boolean, hasPanel: boolean}>({hasPage: false, hasPanel: false})
   
   const chatRef = useRef<HTMLDivElement>(null)
   const uiMountRef = useRef<HTMLDivElement>(null)
   const settingsMountRef = useRef<HTMLDivElement>(null)
 
-  // Load extension bundle
+  // Debug: log when users or currentUserId changes
   useEffect(() => {
+    console.log('[Sandbox] users or currentUserId changed:', { usersLength: users.length, currentUserId })
+  }, [users, currentUserId])
+  
+  // Load extension bundle - runs after users are loaded
+  useEffect(() => {
+    console.log('[Sandbox] loadBundle effect running, users:', users.length, 'currentUserId:', currentUserId)
+    
     const loadBundle = async () => {
       try {
+        console.log('[Sandbox] Loading bundle.js...')
         const res = await fetch('/bundle.js')
+        if (!res.ok) {
+          throw new Error(`Failed to fetch bundle: ${res.status}`)
+        }
         const code = await res.text()
+        console.log('[Sandbox] Bundle loaded, length:', code.length)
         
         // Inject CSS
         try {
@@ -263,8 +280,10 @@ export default function App() {
         } catch {}
         
         // Evaluate bundle
+        console.log('[Sandbox] Evaluating bundle...')
         const fn = new Function('require', code + '\n;return typeof __FluxExtension__ !== "undefined" ? __FluxExtension__ : undefined')
         const exported = fn((id: string) => {
+          console.log('[Sandbox] require:', id)
           if (id === 'react') return window.React
           if (id === 'react-dom') return window.ReactDOM
           // React 19 automatic JSX runtime
@@ -273,6 +292,17 @@ export default function App() {
           }
           if (id === 'lucide-react') return window.lucideReact
           throw new Error(`require(${id}) not supported`)
+        })
+        console.log('[Sandbox] Bundle evaluated, exported:', exported)
+        console.log('[Sandbox] ExtensionPage:', exported?.ExtensionPage)
+        console.log('[Sandbox] ExtensionPanel:', exported?.ExtensionPanel)
+        console.log('[Sandbox] window.React:', window.React)
+        console.log('[Sandbox] window.ReactDOM:', window.ReactDOM)
+        console.log('[Sandbox] uiMountRef.current:', uiMountRef.current)
+        
+        setExtensionInfo({
+          hasPage: !!exported?.ExtensionPage,
+          hasPanel: !!exported?.ExtensionPanel
         })
         
         // Set up extension context
@@ -349,7 +379,16 @@ export default function App() {
             },
             getReactions: async (messageId: string) => messages.find(m => m.id === messageId)?.reactions || []
           },
-          frontend: exported?.ExtensionPanel ? {
+          frontend: {
+            channels: [
+              { id: 'sandbox-channel', name: 'general' },
+              { id: 'sandbox-channel-2', name: 'dev' }
+            ],
+            serverUrl: `http://${window.location.host}`,
+            getUserNameById: async (userId: string) => {
+              const user = users.find(u => u.id === userId)
+              return user ? user.name : null
+            },
             render: (element: React.ReactElement) => {
               if (uiMountRef.current) {
                 window.ReactDOM.createRoot(uiMountRef.current).render(element)
@@ -360,7 +399,7 @@ export default function App() {
                 window.ReactDOM.createRoot(settingsMountRef.current).render(element)
               }
             }
-          } : undefined
+          }
         }
         
         // Call onLoad if exists
@@ -368,37 +407,92 @@ export default function App() {
           exported.onLoad(window.__ctx__)
         }
         
-        // Render UI if ExtensionPanel
-        if (exported?.ExtensionPanel && uiMountRef.current) {
-          window.ReactDOM.createRoot(uiMountRef.current).render(
-            window.React.createElement(exported.ExtensionPanel, { 
+        // Render ExtensionPage (full page view)
+        if (exported?.ExtensionPage && uiMountRef.current) {
+          console.log('[Sandbox] Rendering ExtensionPage...')
+          try {
+            const root = window.ReactDOM.createRoot(uiMountRef.current)
+            const element = window.React.createElement(exported.ExtensionPage, { 
               ctx: window.__ctx__, 
               currentUserId 
             })
-          )
+            console.log('[Sandbox] Created element, rendering...')
+            root.render(element)
+            console.log('[Sandbox] Render complete')
+          } catch (renderErr) {
+            console.error('[Sandbox] Render error:', renderErr)
+          }
         }
         
+        // Render ExtensionPanel (settings panel) - always render if exists
+        if (exported?.ExtensionPanel && settingsMountRef.current) {
+          console.log('[Sandbox] Rendering ExtensionPanel to settings mount...')
+          try {
+            const root = window.ReactDOM.createRoot(settingsMountRef.current)
+            const element = window.React.createElement(exported.ExtensionPanel, { 
+              ctx: window.__ctx__, 
+              currentUserId 
+            })
+            root.render(element)
+          } catch (renderErr) {
+            console.error('[Sandbox] Settings render error:', renderErr)
+          }
+        }
+        
+        setExtensionLoaded(true)
         setDebugLogs(prev => [...prev, { type: 'log', args: ['[Sandbox] Extension loaded'], source: 'backend' }])
         
       } catch (e) {
         console.error('Failed to load extension:', e)
+        setExtensionLoaded(true) // Mark as attempted even if failed
         setDebugLogs(prev => [...prev, { type: 'error', args: [`[Sandbox] Failed to load: ${e}`], source: 'backend' }])
       }
     }
     
     loadBundle()
-  }, [])
+  }, [users, currentUserId, activeTab])
+  
+  // Separate effect to handle rendering when switching to UI tab
+  useEffect(() => {
+    if (activeTab !== 'ui') return
+    
+    console.log('[Sandbox] UI tab activated, checking render conditions...')
+    console.log('[Sandbox] extensionLoaded:', extensionLoaded)
+    console.log('[Sandbox] extensionInfo:', extensionInfo)
+    console.log('[Sandbox] uiMountRef.current:', uiMountRef.current)
+    
+    // If already loaded but nothing rendered yet, try rendering
+    if (extensionLoaded && extensionInfo.hasPage && uiMountRef.current) {
+      console.log('[Sandbox] Trying to render in UI tab effect...')
+    }
+  }, [activeTab, extensionLoaded, extensionInfo])
+
+  // Separate effect to handle rendering when switching to Settings tab
+  useEffect(() => {
+    if (activeTab !== 'settings') return
+    
+    console.log('[Sandbox] Settings tab activated')
+    console.log('[Sandbox] extensionLoaded:', extensionLoaded)
+    console.log('[Sandbox] extensionInfo:', extensionInfo)
+    console.log('[Sandbox] settingsMountRef.current:', settingsMountRef.current)
+    
+    if (extensionLoaded && extensionInfo.hasPanel && settingsMountRef.current) {
+      console.log('[Sandbox] Trying to render in Settings tab effect...')
+    }
+  }, [activeTab, extensionLoaded, extensionInfo])
 
   // Fetch users
   useEffect(() => {
     fetch('/api/users')
       .then(r => r.json())
       .then(data => {
+        console.log('[Sandbox] Users loaded:', data.length)
         setUsers(data)
         if (data.length > 0) {
           setCurrentUserId(data[0].id)
         }
       })
+      .catch(e => console.error('[Sandbox] Failed to fetch users:', e))
     
     fetch('/api/current-user')
       .then(r => r.json())
@@ -648,9 +742,31 @@ export default function App() {
               <Icons.App />
               Extension UI
             </h2>
-            <div ref={uiMountRef} className="h-full" />
-            {!uiMountRef.current?.hasChildNodes() && (
-              <div className="text-zinc-500 text-sm">No UI component provided by this extension.</div>
+            {!extensionLoaded && (
+              <div className="text-yellow-500 text-sm mb-2">Loading extension...</div>
+            )}
+            {extensionLoaded && !extensionInfo.hasPage && !extensionInfo.hasPanel && (
+              <div className="text-red-500 text-sm mb-2">No ExtensionPage or ExtensionPanel found in bundle</div>
+            )}
+            {extensionInfo.hasPage && (
+              <div className="text-green-500 text-sm mb-2">ExtensionPage found ✓</div>
+            )}
+            {extensionInfo.hasPanel && (
+              <div className="text-green-500 text-sm mb-2">ExtensionPanel found ✓</div>
+            )}
+            
+            {/* Step-by-step status */}
+            <div className="bg-zinc-900 p-4 rounded mb-4 text-xs font-mono">
+              <div>1. window.React exists: {window.React ? 'YES' : 'NO'}</div>
+              <div>2. window.ReactDOM exists: {window.ReactDOM ? 'YES' : 'NO'}</div>
+              <div>3. uiMountRef.current exists: {!!uiMountRef.current}</div>
+              <div>4. window.__ctx__ exists: {!!window.__ctx__}</div>
+              <div>5. currentUserId: {currentUserId || 'NOT SET'}</div>
+            </div>
+            
+            <div ref={uiMountRef} className="h-full min-h-[200px] border-2 border-dashed border-zinc-700 rounded" />
+            {!uiMountRef.current?.hasChildNodes() && extensionLoaded && (
+              <div className="text-zinc-500 text-sm mt-2">Component found but nothing rendered.</div>
             )}
           </div>
         )}
@@ -662,7 +778,28 @@ export default function App() {
               <Icons.Settings />
               Extension Settings
             </h2>
-            <div ref={settingsMountRef} className="h-full" />
+            {!extensionLoaded && (
+              <div className="text-yellow-500 text-sm mb-2">Loading extension...</div>
+            )}
+            {extensionLoaded && !extensionInfo.hasPanel && (
+              <div className="text-red-500 text-sm mb-2">No ExtensionPanel found</div>
+            )}
+            {extensionInfo.hasPanel && (
+              <div className="text-green-500 text-sm mb-2">ExtensionPanel found ✓</div>
+            )}
+            
+            {/* Debug info for settings */}
+            <div className="bg-zinc-900 p-4 rounded mb-4 text-xs font-mono">
+              <div>1. window.React exists: {window.React ? 'YES' : 'NO'}</div>
+              <div>2. window.ReactDOM exists: {window.ReactDOM ? 'YES' : 'NO'}</div>
+              <div>3. settingsMountRef.current exists: {!!settingsMountRef.current}</div>
+              <div>4. window.__ctx__ exists: {!!window.__ctx__}</div>
+            </div>
+            
+            <div ref={settingsMountRef} className="h-full min-h-[200px] border-2 border-dashed border-zinc-700 rounded" />
+            {!settingsMountRef.current?.hasChildNodes() && extensionLoaded && extensionInfo.hasPanel && (
+              <div className="text-zinc-500 text-sm mt-2">ExtensionPanel found but nothing rendered.</div>
+            )}
           </div>
         )}
         
