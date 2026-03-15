@@ -3,14 +3,24 @@ import ReactDOM from 'react-dom/client'
 import * as ReactJsxRuntime from 'react/jsx-runtime'
 import * as lucideReact from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
+import { ToastContainer, addToast } from './components/Toast'
 import { Icons } from './components/Icons'
 import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab } from './components'
 import { api, User, Message, Reaction, DirectMessage } from './components/api'
+
+function resolveMentions(content: string, users: User[]) {
+  return content.replace(/<@([^>]+)>/g, (_, userId) => {
+    const user = users.find(u => u.id === userId)
+    return user ? `@${user.name}` : `@${userId}`
+  })
+}
 
 window.React = React
 window.ReactDOM = ReactDOM as typeof window.ReactDOM
 window.ReactJsxRuntime = ReactJsxRuntime
 window.lucideReact = lucideReact
+;(globalThis as unknown as { addToast: typeof import('./components/Toast').addToast }).addToast = addToast
+Object.defineProperty(window, 'addToast', { value: addToast, writable: true })
 
 interface ExtensionContext {
   workspaceId: string
@@ -98,21 +108,14 @@ export default function App() {
   const settingsMountRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    console.log('[Sandbox] users or currentUserId changed:', { usersLength: users.length, currentUserId })
-  }, [users, currentUserId])
-  
-  useEffect(() => {
-    console.log('[Sandbox] loadBundle effect running, users:', users.length, 'currentUserId:', currentUserId)
     
     const loadBundle = async () => {
       try {
-        console.log('[Sandbox] Loading bundle.js...')
         const res = await fetch('/bundle.js')
         if (!res.ok) {
           throw new Error(`Failed to fetch bundle: ${res.status}`)
         }
         const code = await res.text()
-        console.log('[Sandbox] Bundle loaded, length:', code.length)
         
         try {
           const cssRes = await fetch('/bundle.css')
@@ -124,10 +127,8 @@ export default function App() {
           }
         } catch {}
         
-        console.log('[Sandbox] Evaluating bundle...')
         const fn = new Function('require', code + '\n;return typeof __FluxExtension__ !== "undefined" ? __FluxExtension__ : undefined')
         const exported = fn((id: string) => {
-          console.log('[Sandbox] require:', id)
           if (id === 'react') return window.React
           if (id === 'react-dom') return window.ReactDOM
           if (id === 'react/jsx-runtime' || id === 'react/jsx-dev-runtime') {
@@ -136,7 +137,6 @@ export default function App() {
           if (id === 'lucide-react') return window.lucideReact
           throw new Error(`require(${id}) not supported`)
         })
-        console.log('[Sandbox] Bundle evaluated, exported:', exported)
         
         setExtensionInfo({
           hasPage: !!exported?.ExtensionPage,
@@ -192,6 +192,7 @@ export default function App() {
                 recipient: users.find(u => u.id === userId) || { id: userId, name: 'Unknown' }
               }
               setDirectMessages(prev => [...prev, dm])
+              addToast('DM Sent', `To: ${dm.recipient.name}`, 'success')
             },
             getMessages: async () => messages,
             addReaction: async (messageId: string, emoji: string) => {
@@ -240,7 +241,6 @@ export default function App() {
         }
         
         if (exported?.ExtensionPage && uiMountRef.current) {
-          console.log('[Sandbox] Rendering ExtensionPage...')
           try {
             const root = window.ReactDOM.createRoot(uiMountRef.current)
             const element = window.React.createElement(exported.ExtensionPage, { 
@@ -248,14 +248,12 @@ export default function App() {
               currentUserId 
             })
             root.render(element)
-            console.log('[Sandbox] Render complete')
           } catch (renderErr) {
             console.error('[Sandbox] Render error:', renderErr)
           }
         }
         
         if (exported?.ExtensionPanel && settingsMountRef.current) {
-          console.log('[Sandbox] Rendering ExtensionPanel to settings mount...')
           try {
             const root = window.ReactDOM.createRoot(settingsMountRef.current)
             const element = window.React.createElement(exported.ExtensionPanel, { 
@@ -280,16 +278,6 @@ export default function App() {
     
     loadBundle()
   }, [users, currentUserId, activeTab])
-  
-  useEffect(() => {
-    if (activeTab !== 'ui') return
-    console.log('[Sandbox] UI tab activated')
-  }, [activeTab, extensionLoaded, extensionInfo])
-
-  useEffect(() => {
-    if (activeTab !== 'settings') return
-    console.log('[Sandbox] Settings tab activated')
-  }, [activeTab, extensionLoaded, extensionInfo])
 
   useEffect(() => {
     api.users.list()
@@ -321,7 +309,9 @@ export default function App() {
 
   useEffect(() => {
     api.directMessages.list()
-      .then(data => setDirectMessages(data))
+      .then(data => {
+        setDirectMessages(data)
+      })
   }, [])
 
   useEffect(() => {
@@ -334,7 +324,22 @@ export default function App() {
 
   useEffect(() => {
     const unsubscribe = api.events.subscribe((data) => {
-      const eventData = data as { type?: string; messageId?: string; reaction?: Reaction; reactionId?: string }
+      const eventData = data as { type?: string; id?: string; messageId?: string; reaction?: Reaction; reactionId?: string; senderId?: string; recipientId?: string }
+      
+      if (eventData.type === 'dm:created') {
+        api.directMessages.list()
+          .then(dms => {
+            setDirectMessages(dms)
+            const newDm = dms.find(d => d.id === eventData.id)
+            if (newDm) {
+              const resolved = resolveMentions(newDm.content, users)
+              const text = resolved.slice(0, 45) + (resolved.length > 45 ? '...' : '')
+              addToast(`NEW DM`, `${newDm.sender.name} → ${newDm.recipient.name}: ${text}`, 'info')
+            }
+          })
+        return
+      }
+      
       if (eventData.type === 'reaction:added' || eventData.type === 'reaction:removed') {
         setMessages(prev => prev.map(m => {
           if (m.id === eventData.messageId) {
@@ -550,6 +555,8 @@ export default function App() {
           />
         )}
       </div>
+      
+      <ToastContainer />
     </div>
   )
 }

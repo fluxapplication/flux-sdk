@@ -1,5 +1,6 @@
 export { Icons } from './Icons'
 export * as api from './api'
+export { ToastContainer, addToast } from './Toast'
 export { ChatTab, Message } from './ChatTab'
 export { AppUITab } from './AppUITab'
 export { SettingsTab } from './SettingsTab'
