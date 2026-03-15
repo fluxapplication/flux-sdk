@@ -2,15 +2,15 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import * as ReactJsxRuntime from 'react/jsx-runtime'
 import * as lucideReact from 'lucide-react'
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { Icons } from './components/Icons'
+import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab } from './components'
 
-// Expose React and lucide globally for extension bundles
 window.React = React
 window.ReactDOM = ReactDOM as typeof window.ReactDOM
 window.ReactJsxRuntime = ReactJsxRuntime
 window.lucideReact = lucideReact
 
-// Types
 interface User {
   id: string
   name: string
@@ -44,58 +44,6 @@ interface DirectMessage {
   recipient: { id: string; name: string }
 }
 
-// Icons
-const Icons = {
-  Chat: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-    </svg>
-  ),
-  App: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <path d="M3 9h18" />
-      <path d="M9 21V9" />
-    </svg>
-  ),
-  Settings: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42" />
-    </svg>
-  ),
-  Database: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <ellipse cx="12" cy="5" rx="9" ry="3" />
-      <path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" />
-      <path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" />
-    </svg>
-  ),
-  Users: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="9" cy="7" r="4" />
-      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-    </svg>
-  ),
-  Mail: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-      <circle cx="7" cy="12" r="1.5" fill="currentColor" />
-      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-      <circle cx="17" cy="12" r="1.5" fill="currentColor" />
-    </svg>
-  ),
-  Terminal: () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
-      <polyline points="4 17 10 11 4 5" />
-      <line x1="12" y1="19" x2="20" y2="19" />
-    </svg>
-  ),
-}
-
-// Extension context types (same as in flux-fe)
 interface ExtensionContext {
   workspaceId: string
   currentUserId: string
@@ -146,7 +94,6 @@ declare global {
   }
 }
 
-// Nav Item component
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active?: boolean; onClick: () => void }) {
   return (
     <button
@@ -163,96 +110,9 @@ function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; labe
   )
 }
 
-// Helper to render content with mentions
-function renderContentWithMentions(content: string, users: User[]) {
-  const parts = content.split(/(<@[^>]+>)/g)
-  return parts.map((part, i) => {
-    const match = part.match(/<@([^>]+)>/)
-    if (match) {
-      const userId = match[1]
-      const user = users.find(u => u.id === userId)
-      return (
-        <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300 text-sm font-medium border border-violet-500/30">
-          @{user?.name || userId}
-        </span>
-      )
-    }
-    return <span key={i}>{part}</span>
-  })
-}
-
-// Message component
-function Message({ message, currentUserId, onReaction, users }: { message: Message; currentUserId: string; onReaction: (messageId: string, emoji: string) => void; users: User[] }) {
-  const isUser = message.userId === currentUserId || message.userId === 'ext-bot'
-  
-  const [showReactions, setShowReactions] = useState(false)
-  const [reactions, setReactions] = useState<Reaction[]>(message.reactions || [])
-  
-  const emojis = ['👍', '❤️', '😂', '😮', '😢', '🎉']
-
-  return (
-    <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[75%] px-3.5 py-2.5 rounded-2xl animate-msg-in ${
-        isUser 
-          ? 'bg-blue-500 text-white rounded-br-sm' 
-          : 'bg-zinc-800 border border-zinc-700 rounded-bl-sm'
-      }`}>
-        {!isUser && (
-          <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
-        )}
-        <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
-          {renderContentWithMentions(message.content, users)}
-        </div>
-        
-        {/* Reactions */}
-        <div className="flex items-center gap-1 mt-2">
-          {reactions.map((r) => (
-            <button
-              key={r.id}
-              onClick={() => onReaction(message.id, r.emoji)}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-zinc-700/50 hover:bg-zinc-700 transition-colors"
-            >
-              <span>{r.emoji}</span>
-              <span className="text-zinc-400">{r.userId === currentUserId ? '1' : ''}</span>
-            </button>
-          ))}
-          <button
-            onClick={() => setShowReactions(!showReactions)}
-            className="inline-flex items-center justify-center w-6 h-6 rounded-full text-xs text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300 transition-colors"
-          >
-            +
-          </button>
-          {showReactions && (
-            <div className="absolute mt-8 flex gap-1 p-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-lg z-50">
-              {emojis.map((emoji) => (
-                <button
-                  key={emoji}
-                  onClick={() => {
-                    onReaction(message.id, emoji)
-                    setShowReactions(false)
-                  }}
-                  className="p-1 hover:bg-zinc-700 rounded transition-colors"
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        
-        <div className="text-[10px] text-zinc-500 mt-1">
-          {message.createdAt ? new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// Main App component
 export default function App() {
   const [activeTab, setActiveTab] = useState('chat')
   const [messages, setMessages] = useState<Message[]>([])
-  const [inputValue, setInputValue] = useState('')
   const [users, setUsers] = useState<User[]>([])
   const [currentUserId, setCurrentUserId] = useState('')
   const [extensionName, setExtensionName] = useState('Loading...')
@@ -266,23 +126,13 @@ export default function App() {
   const [extensionLoaded, setExtensionLoaded] = useState(false)
   const [extensionInfo, setExtensionInfo] = useState<{hasPage: boolean, hasPanel: boolean}>({hasPage: false, hasPanel: false})
   
-  // Mentions state
-  const [showMentionPicker, setShowMentionPicker] = useState(false)
-  const [mentionQuery, setMentionQuery] = useState('')
-  const [mentionUserIndex, setMentionUserIndex] = useState(0)
-  const [mentionFilter, setMentionFilter] = useState<User[]>([])
-  const mentionInputRef = useRef<HTMLTextAreaElement>(null)
-  
-  const chatRef = useRef<HTMLDivElement>(null)
   const uiMountRef = useRef<HTMLDivElement>(null)
   const settingsMountRef = useRef<HTMLDivElement>(null)
 
-  // Debug: log when users or currentUserId changes
   useEffect(() => {
     console.log('[Sandbox] users or currentUserId changed:', { usersLength: users.length, currentUserId })
   }, [users, currentUserId])
   
-  // Load extension bundle - runs after users are loaded
   useEffect(() => {
     console.log('[Sandbox] loadBundle effect running, users:', users.length, 'currentUserId:', currentUserId)
     
@@ -296,7 +146,6 @@ export default function App() {
         const code = await res.text()
         console.log('[Sandbox] Bundle loaded, length:', code.length)
         
-        // Inject CSS
         try {
           const cssRes = await fetch('/bundle.css')
           if (cssRes.ok) {
@@ -307,14 +156,12 @@ export default function App() {
           }
         } catch {}
         
-        // Evaluate bundle
         console.log('[Sandbox] Evaluating bundle...')
         const fn = new Function('require', code + '\n;return typeof __FluxExtension__ !== "undefined" ? __FluxExtension__ : undefined')
         const exported = fn((id: string) => {
           console.log('[Sandbox] require:', id)
           if (id === 'react') return window.React
           if (id === 'react-dom') return window.ReactDOM
-          // React 19 automatic JSX runtime
           if (id === 'react/jsx-runtime' || id === 'react/jsx-dev-runtime') {
             return window.ReactJsxRuntime
           }
@@ -322,18 +169,12 @@ export default function App() {
           throw new Error(`require(${id}) not supported`)
         })
         console.log('[Sandbox] Bundle evaluated, exported:', exported)
-        console.log('[Sandbox] ExtensionPage:', exported?.ExtensionPage)
-        console.log('[Sandbox] ExtensionPanel:', exported?.ExtensionPanel)
-        console.log('[Sandbox] window.React:', window.React)
-        console.log('[Sandbox] window.ReactDOM:', window.ReactDOM)
-        console.log('[Sandbox] uiMountRef.current:', uiMountRef.current)
         
         setExtensionInfo({
           hasPage: !!exported?.ExtensionPage,
           hasPanel: !!exported?.ExtensionPanel
         })
         
-        // Set up extension context
         window.__ctx__ = {
           workspaceId: 'sandbox-workspace',
           currentUserId: currentUserId,
@@ -430,12 +271,10 @@ export default function App() {
           }
         }
         
-        // Call onLoad if exists
         if (exported?.onLoad) {
           exported.onLoad(window.__ctx__)
         }
         
-        // Render ExtensionPage (full page view)
         if (exported?.ExtensionPage && uiMountRef.current) {
           console.log('[Sandbox] Rendering ExtensionPage...')
           try {
@@ -444,7 +283,6 @@ export default function App() {
               ctx: window.__ctx__, 
               currentUserId 
             })
-            console.log('[Sandbox] Created element, rendering...')
             root.render(element)
             console.log('[Sandbox] Render complete')
           } catch (renderErr) {
@@ -452,7 +290,6 @@ export default function App() {
           }
         }
         
-        // Render ExtensionPanel (settings panel) - always render if exists
         if (exported?.ExtensionPanel && settingsMountRef.current) {
           console.log('[Sandbox] Rendering ExtensionPanel to settings mount...')
           try {
@@ -472,7 +309,7 @@ export default function App() {
         
       } catch (e) {
         console.error('Failed to load extension:', e)
-        setExtensionLoaded(true) // Mark as attempted even if failed
+        setExtensionLoaded(true)
         setDebugLogs(prev => [...prev, { type: 'error', args: [`[Sandbox] Failed to load: ${e}`], source: 'backend' }])
       }
     }
@@ -480,41 +317,20 @@ export default function App() {
     loadBundle()
   }, [users, currentUserId, activeTab])
   
-  // Separate effect to handle rendering when switching to UI tab
   useEffect(() => {
     if (activeTab !== 'ui') return
-    
-    console.log('[Sandbox] UI tab activated, checking render conditions...')
-    console.log('[Sandbox] extensionLoaded:', extensionLoaded)
-    console.log('[Sandbox] extensionInfo:', extensionInfo)
-    console.log('[Sandbox] uiMountRef.current:', uiMountRef.current)
-    
-    // If already loaded but nothing rendered yet, try rendering
-    if (extensionLoaded && extensionInfo.hasPage && uiMountRef.current) {
-      console.log('[Sandbox] Trying to render in UI tab effect...')
-    }
+    console.log('[Sandbox] UI tab activated')
   }, [activeTab, extensionLoaded, extensionInfo])
 
-  // Separate effect to handle rendering when switching to Settings tab
   useEffect(() => {
     if (activeTab !== 'settings') return
-    
     console.log('[Sandbox] Settings tab activated')
-    console.log('[Sandbox] extensionLoaded:', extensionLoaded)
-    console.log('[Sandbox] extensionInfo:', extensionInfo)
-    console.log('[Sandbox] settingsMountRef.current:', settingsMountRef.current)
-    
-    if (extensionLoaded && extensionInfo.hasPanel && settingsMountRef.current) {
-      console.log('[Sandbox] Trying to render in Settings tab effect...')
-    }
   }, [activeTab, extensionLoaded, extensionInfo])
 
-  // Fetch users
   useEffect(() => {
     fetch('/api/users')
       .then(r => r.json())
       .then(data => {
-        console.log('[Sandbox] Users loaded:', data.length)
         setUsers(data)
         if (data.length > 0) {
           setCurrentUserId(data[0].id)
@@ -531,28 +347,24 @@ export default function App() {
       })
   }, [])
 
-  // Fetch messages
   useEffect(() => {
     fetch('/api/messages')
       .then(r => r.json())
       .then(data => setMessages(data))
   }, [])
 
-  // Fetch storage
   useEffect(() => {
     fetch('/api/storage/all')
       .then(r => r.json())
       .then(data => setStorage(data))
   }, [])
 
-  // Fetch DMs
   useEffect(() => {
     fetch('/api/direct-messages')
       .then(r => r.json())
       .then(data => setDirectMessages(data))
   }, [])
 
-  // Fetch manifest
   useEffect(() => {
     fetch('/manifest.json')
       .then(r => r.json())
@@ -562,7 +374,6 @@ export default function App() {
       })
   }, [])
 
-  // SSE for messages
   useEffect(() => {
     const eventSource = new EventSource('/api/events')
     eventSource.onmessage = (e) => {
@@ -585,7 +396,6 @@ export default function App() {
     return () => eventSource.close()
   }, [])
 
-  // Track API calls
   useEffect(() => {
     const originalFetch = window.fetch
     window.fetch = async (...args) => {
@@ -604,7 +414,6 @@ export default function App() {
     return () => { window.fetch = originalFetch }
   }, [])
 
-  // SSE for debug logs
   useEffect(() => {
     const eventSource = new EventSource('/api/debug/logs')
     eventSource.onmessage = (e) => {
@@ -615,30 +424,6 @@ export default function App() {
     return () => eventSource.close()
   }, [debugPaused])
 
-  const sendMessage = async () => {
-    if (!inputValue.trim()) return
-    
-    await fetch('/api/messages', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: inputValue, userId: currentUserId })
-    })
-    
-    setInputValue('')
-    
-    // Add to local messages
-    const user = users.find(u => u.id === currentUserId)
-    const msg: Message = {
-      id: `msg-${Date.now()}`,
-      content: inputValue,
-      userId: currentUserId,
-      user: user || { id: currentUserId, name: 'Unknown' },
-      createdAt: new Date().toISOString(),
-      reactions: []
-    }
-    setMessages(prev => [...prev, msg])
-  }
-
   const handleReaction = async (messageId: string, emoji: string) => {
     await fetch(`/api/sandbox-channel/${messageId}/reactions`, {
       method: 'POST',
@@ -647,100 +432,59 @@ export default function App() {
     })
   }
 
-  const addUser = async (name: string, role: string) => {
-    const id = `user-${Date.now()}`
-    await fetch('/api/users', {
+  const sendMessage = async (content: string) => {
+    await fetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, name, role })
+      body: JSON.stringify({ content, userId: currentUserId })
     })
-    setUsers(prev => [...prev, { id, name, role }])
-  }
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value
-    setInputValue(value)
     
-    // Check for @ mentions
-    const cursorPos = e.target.selectionStart
-    const textBeforeCursor = value.slice(0, cursorPos)
-    const lastAtPos = textBeforeCursor.lastIndexOf('@')
-    
-    if (lastAtPos !== -1) {
-      const textAfterAt = textBeforeCursor.slice(lastAtPos + 1)
-      // Check if there's a space after @ (meaning mention is complete)
-      if (!textAfterAt.includes(' ') && !textAfterAt.includes('\n')) {
-        const query = textAfterAt.toLowerCase()
-        const filtered = users.filter(u => u.name.toLowerCase().includes(query))
-        if (filtered.length > 0) {
-          setMentionQuery(query)
-          setMentionFilter(filtered)
-          setMentionUserIndex(0)
-          setShowMentionPicker(true)
-          return
-        }
-      }
+    const user = users.find(u => u.id === currentUserId)
+    const msg: Message = {
+      id: `msg-${Date.now()}`,
+      content,
+      userId: currentUserId,
+      user: user || { id: currentUserId, name: 'Unknown' },
+      createdAt: new Date().toISOString(),
+      reactions: []
     }
-    setShowMentionPicker(false)
+    setMessages(prev => [...prev, msg])
   }
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (showMentionPicker) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault()
-        setMentionUserIndex(prev => (prev + 1) % mentionFilter.length)
-        return
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault()
-        setMentionUserIndex(prev => (prev - 1 + mentionFilter.length) % mentionFilter.length)
-        return
-      }
-      if (e.key === 'Enter' || e.key === 'Tab') {
-        if (mentionFilter[mentionUserIndex]) {
-          e.preventDefault()
-          insertMention(mentionFilter[mentionUserIndex])
-          return
-        }
-      }
-      if (e.key === 'Escape') {
-        setShowMentionPicker(false)
-        return
-      }
-    }
-    
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      sendMessage()
+  const handleCurrentUserChange = async (userId: string) => {
+    setCurrentUserId(userId)
+    await fetch('/api/current-user', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ currentUserId: userId })
+    })
+  }
+
+  const refreshStorage = () => {
+    fetch('/api/storage/all')
+      .then(r => r.json())
+      .then(data => setStorage(data))
+  }
+
+  const saveStorage = async () => {
+    try {
+      const data = JSON.parse(JSON.stringify(storage))
+      await fetch('/api/storage/all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+      alert('Storage saved!')
+    } catch (e) {
+      alert('Invalid JSON')
     }
   }
 
-  const insertMention = (user: User) => {
-    const cursorPos = mentionInputRef.current?.selectionStart || inputValue.length
-    const textBeforeCursor = inputValue.slice(0, cursorPos)
-    const lastAtPos = textBeforeCursor.lastIndexOf('@')
-    
-    if (lastAtPos !== -1) {
-      const before = inputValue.slice(0, lastAtPos)
-      const after = inputValue.slice(cursorPos)
-      setInputValue(`${before}<@${user.id}> ${after}`)
-      setShowMentionPicker(false)
-    }
-  }
-
-  const scrollToBottom = () => {
-    if (chatRef.current) {
-      chatRef.current.scrollTop = chatRef.current.scrollHeight
-    }
-  }
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
+  const clearLogs = () => setDebugLogs([])
+  const togglePause = () => setDebugPaused(prev => !prev)
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100 overflow-hidden">
-      {/* Sidebar */}
       <div className="w-[220px] bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
         <div className="p-4 px-4 border-b border-zinc-800 flex items-center gap-2.5">
           <img 
@@ -806,353 +550,67 @@ export default function App() {
         </div>
       </div>
       
-      {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        {/* Chat Tab */}
         {activeTab === 'chat' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div ref={chatRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-2">
-              <div className="px-3.5 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-xl">
-                <div className="text-[11px] text-zinc-500 mb-1 font-semibold">Sandbox System</div>
-                <div className="text-sm text-zinc-300">Welcome to the local development sandbox. Type a message below to test your extension's onMessage handler.</div>
-              </div>
-              
-              {messages.map(msg => (
-                <Message 
-                  key={msg.id} 
-                  message={msg} 
-                  currentUserId={currentUserId}
-                  onReaction={handleReaction}
-                  users={users}
-                />
-              ))}
-            </div>
-            
-            <div className="p-4 px-5 bg-zinc-900 border-t border-zinc-800 flex gap-2.5 items-end relative">
-              <textarea
-                ref={mentionInputRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Type a message to the channel... (@ to mention)"
-                rows={1}
-                className="flex-1 px-3.5 py-2.5 rounded-xl border border-zinc-700 bg-zinc-800 text-zinc-100 outline-none text-sm resize-none transition-colors focus:border-violet-500 focus:ring-2 focus:ring-violet-500/20"
-              />
-              <button
-                onClick={sendMessage}
-                className="px-4 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-sm font-medium transition-colors"
-              >
-                Send
-              </button>
-              
-              {/* Mention Picker */}
-              {showMentionPicker && mentionFilter.length > 0 && (
-                <div className="absolute bottom-full left-4 mb-2 w-64 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 max-h-48 overflow-y-auto">
-                  {mentionFilter.map((user, idx) => (
-                    <button
-                      key={user.id}
-                      onClick={() => insertMention(user)}
-                      className={`w-full px-3 py-2 flex items-center gap-2 text-left transition-colors ${
-                        idx === mentionUserIndex ? 'bg-violet-600' : 'hover:bg-zinc-700'
-                      }`}
-                    >
-                      <div className="w-6 h-6 rounded-full bg-zinc-600 flex items-center justify-center text-xs">
-                        {user.name.charAt(0)}
-                      </div>
-                      <span className="text-sm">{user.name}</span>
-                      <span className="text-xs text-zinc-500 ml-auto">{user.id}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <ChatTab 
+            messages={messages}
+            currentUserId={currentUserId}
+            users={users}
+            onReaction={handleReaction}
+            onSendMessage={sendMessage}
+          />
         )}
         
-        {/* App UI Tab */}
         {activeTab === 'ui' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <Icons.App />
-              Extension UI
-            </h2>
-            {!extensionLoaded && (
-              <div className="text-yellow-500 text-sm mb-2">Loading extension...</div>
-            )}
-            {extensionLoaded && !extensionInfo.hasPage && !extensionInfo.hasPanel && (
-              <div className="text-red-500 text-sm mb-2">No ExtensionPage or ExtensionPanel found in bundle</div>
-            )}
-            {extensionInfo.hasPage && (
-              <div className="text-green-500 text-sm mb-2">ExtensionPage found ✓</div>
-            )}
-            {extensionInfo.hasPanel && (
-              <div className="text-green-500 text-sm mb-2">ExtensionPanel found ✓</div>
-            )}
-            
-            {/* Step-by-step status */}
-            <div className="bg-zinc-900 p-4 rounded mb-4 text-xs font-mono">
-              <div>1. window.React exists: {window.React ? 'YES' : 'NO'}</div>
-              <div>2. window.ReactDOM exists: {window.ReactDOM ? 'YES' : 'NO'}</div>
-              <div>3. uiMountRef.current exists: {!!uiMountRef.current}</div>
-              <div>4. window.__ctx__ exists: {!!window.__ctx__}</div>
-              <div>5. currentUserId: {currentUserId || 'NOT SET'}</div>
-            </div>
-            
-            <div ref={uiMountRef} className="h-full min-h-[200px] border-2 border-dashed border-zinc-700 rounded" />
-            {!uiMountRef.current?.hasChildNodes() && extensionLoaded && (
-              <div className="text-zinc-500 text-sm mt-2">Component found but nothing rendered.</div>
-            )}
-          </div>
+          <AppUITab 
+            extensionLoaded={extensionLoaded}
+            extensionInfo={extensionInfo}
+            currentUserId={currentUserId}
+            uiMountRef={uiMountRef}
+          />
         )}
         
-        {/* Settings Tab */}
         {activeTab === 'settings' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-              <Icons.Settings />
-              Extension Settings
-            </h2>
-            {!extensionLoaded && (
-              <div className="text-yellow-500 text-sm mb-2">Loading extension...</div>
-            )}
-            {extensionLoaded && !extensionInfo.hasPanel && (
-              <div className="text-red-500 text-sm mb-2">No ExtensionPanel found</div>
-            )}
-            {extensionInfo.hasPanel && (
-              <div className="text-green-500 text-sm mb-2">ExtensionPanel found ✓</div>
-            )}
-            
-            {/* Debug info for settings */}
-            <div className="bg-zinc-900 p-4 rounded mb-4 text-xs font-mono">
-              <div>1. window.React exists: {window.React ? 'YES' : 'NO'}</div>
-              <div>2. window.ReactDOM exists: {window.ReactDOM ? 'YES' : 'NO'}</div>
-              <div>3. settingsMountRef.current exists: {!!settingsMountRef.current}</div>
-              <div>4. window.__ctx__ exists: {!!window.__ctx__}</div>
-            </div>
-            
-            <div ref={settingsMountRef} className="h-full min-h-[200px] border-2 border-dashed border-zinc-700 rounded" />
-            {!settingsMountRef.current?.hasChildNodes() && extensionLoaded && extensionInfo.hasPanel && (
-              <div className="text-zinc-500 text-sm mt-2">ExtensionPanel found but nothing rendered.</div>
-            )}
-          </div>
+          <SettingsTab 
+            extensionLoaded={extensionLoaded}
+            extensionInfo={extensionInfo}
+            settingsMountRef={settingsMountRef}
+          />
         )}
         
-        {/* Storage Tab */}
         {activeTab === 'storage' && (
-          <div className="flex-1 p-6 flex flex-col gap-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Icons.Database />
-                Storage Editor
-              </h2>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => {
-                    fetch('/api/storage/all')
-                      .then(r => r.json())
-                      .then(data => setStorage(data))
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-                >
-                  ↻ Refresh
-                </button>
-                <button
-                  onClick={async () => {
-                    try {
-                      const data = JSON.parse(JSON.stringify(storage))
-                      await fetch('/api/storage/all', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
-                      })
-                      alert('Storage saved!')
-                    } catch (e) {
-                      alert('Invalid JSON')
-                    }
-                  }}
-                  className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-500 text-white text-xs font-medium transition-colors"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-            
-            <textarea
-              value={JSON.stringify(storage, null, 2)}
-              onChange={(e) => {
-                try {
-                  setStorage(JSON.parse(e.target.value))
-                } catch {}
-              }}
-              className="flex-1 bg-zinc-900 border border-zinc-800 rounded-xl p-4 text-sm text-zinc-300 font-mono outline-none resize-none"
-            />
-          </div>
+          <StorageTab 
+            storage={storage}
+            onStorageChange={setStorage}
+            onRefresh={refreshStorage}
+            onSave={saveStorage}
+          />
         )}
         
-        {/* Users Tab */}
         {activeTab === 'users' && (
-          <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-5">
-            <h2 className="text-lg font-bold flex items-center gap-2">
-              <Icons.Users />
-              Users Manager
-            </h2>
-            
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-zinc-800">
-                <div className="text-sm font-semibold text-zinc-300">Active User</div>
-              </div>
-              <div className="px-5 py-4 flex items-center gap-3">
-                <select
-                  value={currentUserId}
-                  onChange={(e) => {
-                    setCurrentUserId(e.target.value)
-                    fetch('/api/current-user', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ currentUserId: e.target.value })
-                    })
-                  }}
-                  className="bg-zinc-800 border border-zinc-700 text-zinc-100 px-3 py-2 rounded-lg text-sm outline-none cursor-pointer min-w-[220px] focus:border-violet-500"
-                >
-                  {users.map(user => (
-                    <option key={user.id} value={user.id}>{user.name}</option>
-                  ))}
-                </select>
-                <span className="text-xs text-zinc-500">Sends messages & passed as currentUserId</span>
-              </div>
-            </div>
-            
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-zinc-800">
-                <div className="text-sm font-semibold text-zinc-300">All Users</div>
-              </div>
-              <div className="px-5 py-4 flex flex-col gap-2">
-                {users.map(user => (
-                  <div key={user.id} className="flex items-center justify-between px-4 py-3 bg-zinc-800 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-violet-600/20 flex items-center justify-center text-violet-400 font-medium">
-                        {user.name.charAt(0)}
-                      </div>
-                      <div>
-                        <div className="font-medium">{user.name}</div>
-                        <div className="text-xs text-zinc-500">{user.id}</div>
-                      </div>
-                    </div>
-                    <span className="px-2 py-1 text-xs font-medium rounded bg-zinc-700 text-zinc-400">{user.role}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          <UsersTab 
+            users={users}
+            currentUserId={currentUserId}
+            onCurrentUserChange={handleCurrentUserChange}
+          />
         )}
         
-        {/* DMs Tab */}
         {activeTab === 'dms' && (
-          <div className="flex-1 overflow-y-auto p-6">
-            <h2 className="text-lg font-bold flex items-center gap-2 mb-5">
-              <Icons.Mail />
-              Direct Messages
-            </h2>
-            
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-              <div className="px-5 py-4 border-b border-zinc-800">
-                <div className="text-sm font-semibold text-zinc-300">Messages sent by extension</div>
-              </div>
-              {directMessages.length === 0 ? (
-                <div className="p-8 text-center text-zinc-500 text-sm">No direct messages yet</div>
-              ) : (
-                <div className="divide-y divide-zinc-800">
-                  {directMessages.map(dm => (
-                    <div key={dm.id} className="px-5 py-4">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium text-zinc-200">{dm.sender.name}</span>
-                        <span className="text-zinc-500">→</span>
-                        <span className="font-medium text-zinc-200">{dm.recipient.name}</span>
-                        <span className="text-xs text-zinc-500 ml-auto">{dm.createdAt ? new Date(dm.createdAt).toLocaleString() : ''}</span>
-                      </div>
-                      <div className="text-sm text-zinc-400">{dm.content}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
+          <DMsTab 
+            directMessages={directMessages}
+          />
         )}
         
-        {/* Debug Tab */}
         {activeTab === 'debug' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between flex-shrink-0 p-4 border-b border-zinc-800">
-              <h2 className="text-lg font-bold flex items-center gap-2">
-                <Icons.Terminal />
-                Debug Console
-              </h2>
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setDebugLogs([])}
-                  className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition-colors"
-                >
-                  Clear
-                </button>
-                <button 
-                  onClick={() => setDebugPaused(!debugPaused)}
-                  className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white text-xs font-medium transition-colors"
-                >
-                  {debugPaused ? 'Resume' : 'Pause'}
-                </button>
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-1 px-4 py-2 border-b border-zinc-800 bg-zinc-900">
-              <button
-                onClick={() => setDebugTab('ext-logs')}
-                className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  debugTab === 'ext-logs' 
-                    ? 'bg-violet-500/15 text-violet-400' 
-                    : 'text-zinc-400 hover:bg-zinc-800'
-                }`}
-              >
-                Extension Logs
-              </button>
-              <button
-                onClick={() => setDebugTab('api-calls')}
-                className={`px-3.5 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                  debugTab === 'api-calls' 
-                    ? 'bg-violet-500/15 text-violet-400' 
-                    : 'text-zinc-400 hover:bg-zinc-800'
-                }`}
-              >
-                API Calls
-              </button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-3 font-mono text-xs">
-              {debugTab === 'ext-logs' ? (
-                debugLogs.map((log, i) => (
-                  <div 
-                    key={i} 
-                    className={`p-2 mb-1 rounded bg-zinc-900 border-l-2 animate-debug-log-in ${
-                      log.type === 'error' ? 'border-red-500 bg-red-950/30' :
-                      log.type === 'warn' ? 'border-amber-500 bg-amber-950/30' :
-                      log.type === 'info' ? 'border-blue-500' :
-                      'border-green-500'
-                    }`}
-                  >
-                    <span className="text-zinc-500 mr-2">[{log.source}]</span>
-                    <span className="text-zinc-400">{log.args.join(' ')}</span>
-                  </div>
-                ))
-              ) : (
-                apiCalls.map((call, i) => (
-                  <div key={i} className="p-2 mb-1 rounded bg-zinc-900 border-l-2 border-blue-500">
-                    <span className="text-blue-400 mr-2">{call.method}</span>
-                    <span className="text-zinc-400">{call.url}</span>
-                    <span className="text-zinc-600 ml-2">{call.timestamp}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
+          <DebugTab 
+            debugLogs={debugLogs}
+            apiCalls={apiCalls}
+            debugPaused={debugPaused}
+            debugTab={debugTab}
+            onClearLogs={clearLogs}
+            onTogglePause={togglePause}
+            onTabChange={setDebugTab}
+          />
         )}
       </div>
     </div>
