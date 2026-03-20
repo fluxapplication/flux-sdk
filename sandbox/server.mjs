@@ -238,13 +238,13 @@ export async function startServer(port, extensionDir) {
         }
         return { messageId: msg.id };
       },
-      editMessage: async (msgId, newContent) => {
-        const logMsg = `[API] ctx.messages.editMessage("${msgId}", ${JSON.stringify(newContent)})`;
+      editMessage: async (channelId, msgId, newContent) => {
+        const logMsg = `[API] ctx.messages.editMessage("${channelId}", "${msgId}", ${JSON.stringify(newContent)})`;
         console.log(`[Sandbox] ${logMsg}`);
         broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         
         const idx = messages.findIndex(m => m.id === msgId);
-        if (idx === -1) return false;
+        if (idx === -1) return;
         
         messages[idx] = { ...messages[idx], content: newContent };
         sandboxSettings.messages = messages.slice(-500);
@@ -254,7 +254,6 @@ export async function startServer(port, extensionDir) {
         for (const client of clients) {
           safeSseWrite(client, `data: ${JSON.stringify({ type: 'message:edited', message: updated })}\n\n`);
         }
-        return true;
       },
       sendDirectMessage: async (userId, content) => {
         const logMsg = `[API] ctx.messages.sendDirectMessage("${userId}", ${JSON.stringify(content)})`;
@@ -285,8 +284,8 @@ export async function startServer(port, extensionDir) {
         }));
         return channelMessages;
       },
-      addReaction: async (messageId, emoji) => {
-        const logMsg = `[API] ctx.messages.addReaction("${messageId}", "${emoji}")`;
+      addReaction: async (channelId, messageId, emoji) => {
+        const logMsg = `[API] ctx.messages.addReaction("${channelId}", "${messageId}", "${emoji}")`;
         console.log(`[Sandbox] ${logMsg}`);
         broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
 
@@ -342,8 +341,8 @@ export async function startServer(port, extensionDir) {
         }
         return { reaction };
       },
-      getReactions: async (messageId) => {
-        const logMsg = `[API] ctx.messages.getReactions("${messageId}")`;
+      getReactions: async (channelId, messageId) => {
+        const logMsg = `[API] ctx.messages.getReactions("${channelId}", "${messageId}")`;
         console.log(`[Sandbox] ${logMsg}`);
         broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         return reactions.filter(r => r.messageId === messageId);

@@ -42,11 +42,11 @@ interface ExtensionContext {
   }
   messages: {
     sendMessage: (channelId: string, content: string) => Promise<{ messageId: string }>
-    editMessage: (messageId: string, content: string) => Promise<void>
+    editMessage: (channelId: string, messageId: string, content: string) => Promise<void>
     sendDirectMessage: (userId: string, content: string) => Promise<void>
     getMessages: (channelId: string, limit?: number) => Promise<Message[]>
-    addReaction: (messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>
-    getReactions: (messageId: string) => Promise<Reaction[]>
+    addReaction: (channelId: string, messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>
+    getReactions: (channelId: string, messageId: string) => Promise<Reaction[]>
   }
   frontend: {
     channels: { id: string; name: string }[]
@@ -202,7 +202,7 @@ export default function App() {
               setMessages(prev => [...prev, msg])
               return { messageId: msg.id }
             },
-            editMessage: async (msgId: string, newContent: string): Promise<void> => {
+            editMessage: async (channelId: string, msgId: string, newContent: string): Promise<void> => {
               setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: newContent } : m))
             },
             sendDirectMessage: async (userId: string, content: string) => {
@@ -219,7 +219,7 @@ export default function App() {
               addToast('DM Sent', `To: ${dm.recipient.name}`, 'success')
             },
             getMessages: async () => messages,
-            addReaction: async (messageId: string, emoji: string) => {
+            addReaction: async (channelId: string, messageId: string, emoji: string) => {
               const reaction: Reaction = {
                 id: `reaction-${Date.now()}`,
                 messageId,
@@ -235,7 +235,7 @@ export default function App() {
               }))
               return { reaction }
             },
-            getReactions: async (messageId: string) => messages.find(m => m.id === messageId)?.reactions || []
+            getReactions: async (channelId: string, messageId: string) => messages.find(m => m.id === messageId)?.reactions || []
           },
           frontend: {
             channels: channels,

@@ -545,11 +545,13 @@ const ctx = {
   },
   messages: {
     sendMessage: async (channelId, content) => {
+      const messageId = `msg-${Date.now()}`;
       await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content, channelId, userId: ctx.currentUserId }),
       });
+      return { messageId };
     },
     sendDirectMessage: async (userId, content) => {
       await fetch("/api/direct-messages", {

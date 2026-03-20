@@ -21,7 +21,7 @@ interface ExtensionContext {
     getCurrentUserRole: () => Promise<string>
   }
   messages: {
-    sendMessage: (channelId: string, content: string) => Promise<void>
+    sendMessage: (channelId: string, content: string) => Promise<{ messageId: string }>
     sendDirectMessage: (userId: string, content: string) => Promise<void>
     getMessages: (channelId: string, limit?: number) => Promise<Message[]>
     addReaction: (messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>

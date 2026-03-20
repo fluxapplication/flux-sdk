@@ -116,11 +116,11 @@ export interface UsersAPI {
 
 export interface MessagesAPI {
   sendMessage(channelId: string, content: string): Promise<{ messageId: string }>;
-  editMessage(messageId: string, content: string): Promise<void>;
+  editMessage(channelId: string, messageId: string, content: string): Promise<void>;
   sendDirectMessage(userId: string, content: string): Promise<void>;
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
-  addReaction(messageId: string, emoji: string): Promise<{ reaction: Reaction } | { removed: boolean }>;
-  getReactions(messageId: string): Promise<Reaction[]>;
+  addReaction(channelId: string, messageId: string, emoji: string): Promise<{ reaction: Reaction } | { removed: boolean }>;
+  getReactions(channelId: string, messageId: string): Promise<Reaction[]>;
 }
 
 // ─── Backend Context ────────────────────────────────────────────────────────
