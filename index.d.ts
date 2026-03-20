@@ -115,7 +115,8 @@ export interface UsersAPI {
 }
 
 export interface MessagesAPI {
-  sendMessage(channelId: string, content: string): Promise<void>;
+  sendMessage(channelId: string, content: string): Promise<{ messageId: string }>;
+  editMessage(messageId: string, content: string): Promise<void>;
   sendDirectMessage(userId: string, content: string): Promise<void>;
   getMessages(channelId: string, limit?: number): Promise<ChannelMessage[]>;
   addReaction(messageId: string, emoji: string): Promise<{ reaction: Reaction } | { removed: boolean }>;
@@ -197,6 +198,8 @@ export interface MessageRendererProps {
   message: { id: string; content: string };
   ctx: ExtensionContext;
   currentUserId: string;
+  onSendMessage?: (content: string) => Promise<void>;
+  onEditMessage?: (messageId: string, content: string) => Promise<void>;
 }
 
 export interface RendererEntry {

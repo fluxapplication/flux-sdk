@@ -11,6 +11,7 @@ export interface Message {
   user: { id: string; name: string }
   createdAt: string
   reactions?: Reaction[]
+  channelId?: string
 }
 
 export interface Reaction {
@@ -74,11 +75,18 @@ export const api = {
       const res = await fetch('/api/messages')
       return res.json()
     },
-    send: async (content: string, userId: string): Promise<void> => {
+    send: async (content: string, userId: string, channelId?: string): Promise<void> => {
       await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, userId })
+        body: JSON.stringify({ content, userId, channelId })
+      })
+    },
+    edit: async (messageId: string, content: string): Promise<void> => {
+      await fetch(`/api/messages/${messageId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content })
       })
     },
     addReaction: async (channelId: string, messageId: string, emoji: string): Promise<void> => {
@@ -121,6 +129,34 @@ export const api = {
   manifest: {
     get: async (): Promise<{ name: string; slug: string; commands?: { name: string; description: string; usage: string }[] }> => {
       const res = await fetch('/manifest.json')
+      return res.json()
+    }
+  },
+
+  channels: {
+    list: async (): Promise<{ id: string; name: string }[]> => {
+      const res = await fetch('/api/channels')
+      return res.json()
+    },
+    create: async (name: string): Promise<{ id: string; name: string }> => {
+      const res = await fetch('/api/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      })
+      return res.json()
+    },
+    delete: async (id: string): Promise<void> => {
+      await fetch(`/api/channels?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      })
+    },
+    rename: async (id: string, name: string): Promise<{ id: string; name: string }> => {
+      const res = await fetch('/api/channels', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, name })
+      })
       return res.json()
     }
   },

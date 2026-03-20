@@ -80,7 +80,7 @@ function renderContentWithMentions(content: string, users: User[]) {
   })
 }
 
-export function Message({ message, onReaction, users, messageRenderers = [], currentUserId }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[]; messageRenderers?: MessageRenderer[]; currentUserId?: string }) {
+export function Message({ message, onReaction, users, messageRenderers = [], currentUserId, onSendMessage, onEditMessage }: { message: Message; onReaction: (messageId: string, emoji: string) => void; users: User[]; messageRenderers?: MessageRenderer[]; currentUserId?: string; onSendMessage?: (content: string) => void; onEditMessage?: (messageId: string, content: string) => void }) {
   const [showPicker, setShowPicker] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const messageRef = useRef<HTMLDivElement>(null)
@@ -121,7 +121,7 @@ export function Message({ message, onReaction, users, messageRenderers = [], cur
       >
         <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
         {RendererComponent && currentUserId ? (
-          <RendererComponent message={message} ctx={window.__ctx__} currentUserId={currentUserId} />
+          <RendererComponent message={message} ctx={window.__ctx__} currentUserId={currentUserId} onSendMessage={onSendMessage} onEditMessage={onEditMessage} />
         ) : (
           <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
             {renderContentWithMentions(message.content, users)}
@@ -167,7 +167,7 @@ export function Message({ message, onReaction, users, messageRenderers = [], cur
 
 interface MessageRenderer {
   match: (content: string) => boolean
-  component: React.ComponentType<{ message: Message; ctx: ExtensionContext; currentUserId: string }>
+  component: React.ComponentType<{ message: Message; ctx: ExtensionContext; currentUserId: string; onSendMessage?: (content: string) => void; onEditMessage?: (messageId: string, content: string) => void }>
 }
 
 interface ChatTabProps {
@@ -178,9 +178,13 @@ interface ChatTabProps {
   messageRenderers?: MessageRenderer[]
   onReaction: (messageId: string, emoji: string) => void
   onSendMessage: (content: string) => void
+  onEditMessage?: (messageId: string, content: string) => void
+  channels?: { id: string; name: string }[]
+  currentChannelId?: string
+  onChannelChange?: (channelId: string) => void
 }
 
-export function ChatTab({ messages, currentUserId, users, commands = [], messageRenderers = [], onReaction, onSendMessage }: ChatTabProps) {
+export function ChatTab({ messages, currentUserId, users, commands = [], messageRenderers = [], onReaction, onSendMessage, onEditMessage, channels = [], currentChannelId, onChannelChange }: ChatTabProps) {
   const [inputValue, setInputValue] = useState('')
   const [showMentionPicker, setShowMentionPicker] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -340,13 +344,34 @@ export function ChatTab({ messages, currentUserId, users, commands = [], message
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
+      {/* Channel selector */}
+      {channels.length > 0 && onChannelChange && (
+        <div className="px-4 pt-3 pb-0 flex items-center gap-2 flex-shrink-0">
+          <span className="text-[10px] uppercase tracking-widest text-zinc-500 font-semibold">Channel:</span>
+          <div className="flex gap-1">
+            {channels.map(ch => (
+              <button
+                key={ch.id}
+                onClick={() => onChannelChange(ch.id)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  ch.id === currentChannelId
+                    ? 'bg-violet-600 text-white'
+                    : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200'
+                }`}
+              >
+                #{ch.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       <div ref={chatRef} className="flex-1 overflow-y-auto p-5 flex flex-col gap-1">
         <div className="px-3.5 py-2 bg-zinc-800/50 border border-zinc-700/50 rounded-xl">
           <div className="text-[11px] text-zinc-500 mb-1 font-semibold">Sandbox System</div>
           <div className="text-sm text-zinc-300">Welcome to the local development sandbox. Type a message below to test your extension's onMessage handler.</div>
         </div>
         
-        {messages.map(msg => (
+        {messages.filter(msg => msg.content.trim() !== '').map(msg => (
           <Message 
             key={msg.id} 
             message={msg} 
@@ -354,6 +379,8 @@ export function ChatTab({ messages, currentUserId, users, commands = [], message
             users={users}
             messageRenderers={messageRenderers}
             currentUserId={currentUserId}
+            onSendMessage={onSendMessage}
+            onEditMessage={onEditMessage}
           />
         ))}
       </div>

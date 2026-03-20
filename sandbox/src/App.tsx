@@ -5,7 +5,7 @@ import * as lucideReact from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { ToastContainer, addToast } from './components/Toast'
 import { Icons } from './components/Icons'
-import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab } from './components'
+import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab, ChannelsTab } from './components'
 import { api, User, Message, Reaction, DirectMessage } from './components/api'
 
 function resolveMentions(content: string, users: User[]) {
@@ -41,7 +41,8 @@ interface ExtensionContext {
     getCurrentUserRole: () => Promise<string>
   }
   messages: {
-    sendMessage: (channelId: string, content: string) => Promise<void>
+    sendMessage: (channelId: string, content: string) => Promise<{ messageId: string }>
+    editMessage: (messageId: string, content: string) => Promise<void>
     sendDirectMessage: (userId: string, content: string) => Promise<void>
     getMessages: (channelId: string, limit?: number) => Promise<Message[]>
     addReaction: (messageId: string, emoji: string) => Promise<{ reaction?: Reaction; removed?: boolean }>
@@ -96,6 +97,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('chat')
   const [messages, setMessages] = useState<Message[]>([])
   const [users, setUsers] = useState<User[]>([])
+  const [channels, setChannels] = useState<{ id: string; name: string }[]>([
+    { id: 'sandbox-channel', name: 'general' },
+    { id: 'sandbox-channel-2', name: 'dev' }
+  ])
+  const [currentChannelId, setCurrentChannelId] = useState('sandbox-channel')
   const [currentUserId, setCurrentUserId] = useState('')
   const [extensionName, setExtensionName] = useState('Loading...')
   const [extensionSlug, setExtensionSlug] = useState('sandbox')
@@ -183,16 +189,21 @@ export default function App() {
             getCurrentUserRole: async () => users.find(u => u.id === currentUserId)?.role || 'MEMBER'
           },
           messages: {
-            sendMessage: async (channelId: string, content: string) => {
+            sendMessage: async (channelId: string, content: string): Promise<{ messageId: string }> => {
               const msg: Message = {
                 id: `msg-${Date.now()}`,
                 content,
+                channelId,
                 userId: 'ext-bot',
                 user: { id: 'ext-bot', name: extensionName },
                 createdAt: new Date().toISOString(),
                 reactions: []
               }
               setMessages(prev => [...prev, msg])
+              return { messageId: msg.id }
+            },
+            editMessage: async (msgId: string, newContent: string): Promise<void> => {
+              setMessages(prev => prev.map(m => m.id === msgId ? { ...m, content: newContent } : m))
             },
             sendDirectMessage: async (userId: string, content: string) => {
               const dm: DirectMessage = {
@@ -227,10 +238,7 @@ export default function App() {
             getReactions: async (messageId: string) => messages.find(m => m.id === messageId)?.reactions || []
           },
           frontend: {
-            channels: [
-              { id: 'sandbox-channel', name: 'general' },
-              { id: 'sandbox-channel-2', name: 'dev' }
-            ],
+            channels: channels,
             serverUrl: `http://${window.location.host}`,
             getUserNameById: async (userId: string) => {
               const user = users.find(u => u.id === userId)
@@ -337,8 +345,25 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    api.channels.list()
+      .then(data => {
+        if (data.length > 0) {
+          setChannels(data)
+          setCurrentChannelId(data[0].id)
+        }
+      })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (window.__ctx__?.frontend) {
+      window.__ctx__.frontend.channels = channels
+    }
+  }, [channels])
+
+  useEffect(() => {
     const unsubscribe = api.events.subscribe((data) => {
-      const eventData = data as { type?: string; id?: string; messageId?: string; reaction?: Reaction; reactionId?: string; senderId?: string; recipientId?: string }
+      const eventData = data as { type?: string; id?: string; messageId?: string; reaction?: Reaction; reactionId?: string; senderId?: string; recipientId?: string; channels?: { id: string; name: string }[]; message?: { id: string; content: string } }
       
       if (eventData.type === 'dm:created') {
         api.directMessages.list()
@@ -351,6 +376,20 @@ export default function App() {
               addToast(`NEW DM`, `${newDm.sender.name} → ${newDm.recipient.name}: ${text}`, 'info')
             }
           })
+        return
+      }
+
+      if (eventData.type === 'channels:updated') {
+        if (eventData.channels) {
+          setChannels(eventData.channels)
+        }
+        return
+      }
+
+      if (eventData.type === 'message:edited') {
+        if (eventData.message) {
+          setMessages(prev => prev.map(m => m.id === eventData.message!.id ? { ...m, content: eventData.message!.content } : m))
+        }
         return
       }
       
@@ -405,7 +444,15 @@ export default function App() {
   }
 
   const sendMessage = async (content: string) => {
-    await api.messages.send(content, currentUserId)
+    await api.messages.send(content, currentUserId, currentChannelId)
+  }
+
+  const handleEditMessage = async (messageId: string, content: string) => {
+    await api.messages.edit(messageId, content)
+  }
+
+  const handleChannelChange = async (channelId: string) => {
+    setCurrentChannelId(channelId)
   }
 
   const handleCurrentUserChange = async (userId: string) => {
@@ -484,6 +531,12 @@ export default function App() {
             onClick={() => setActiveTab('users')} 
           />
           <NavItem 
+            icon={<Icons.Hash />} 
+            label="Channels" 
+            active={activeTab === 'channels'} 
+            onClick={() => setActiveTab('channels')} 
+          />
+          <NavItem 
             icon={<Icons.Mail />} 
             label="DMs" 
             active={activeTab === 'dms'} 
@@ -508,6 +561,10 @@ export default function App() {
             messageRenderers={messageRenderers}
             onReaction={handleReaction}
             onSendMessage={sendMessage}
+            onEditMessage={handleEditMessage}
+            channels={channels}
+            currentChannelId={currentChannelId}
+            onChannelChange={handleChannelChange}
           />
         )}
         
@@ -538,6 +595,14 @@ export default function App() {
             currentUserId={currentUserId}
             onCurrentUserChange={handleCurrentUserChange}
             onUsersChange={setUsers}
+          />
+        )}
+
+        {activeTab === 'channels' && (
+          <ChannelsTab
+            channels={channels}
+            currentChannelId={currentChannelId}
+            onChannelsChange={setChannels}
           />
         )}
         

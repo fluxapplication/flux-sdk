@@ -53,10 +53,14 @@ export async function startServer(port, extensionDir) {
       users: defaultUsers,
       messages: [],
       currentUserId: 'sandbox-user-1',
-      directMessages: []
+      directMessages: [],
+      channels: [
+        { id: 'sandbox-channel', name: 'general' },
+        { id: 'sandbox-channel-2', name: 'dev' }
+      ]
     };
     fs.writeFileSync(settingsFile, JSON.stringify(sandboxSettings, null, 2));
-    console.log('[Sandbox] Created default settings with users');
+    console.log('[Sandbox] Created default settings with users and channels');
   }
 
   const persistSettings = () => {
@@ -68,6 +72,10 @@ export async function startServer(port, extensionDir) {
   const messages = sandboxSettings.messages; // Use persisted messages
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
   const reactions = []; // In-memory reactions storage
+  let channels = sandboxSettings.channels || [
+    { id: 'sandbox-channel', name: 'general' },
+    { id: 'sandbox-channel-2', name: 'dev' }
+  ]; // Channel storage
 
   function safeSseWrite(client, data) {
     try {
@@ -114,6 +122,16 @@ export async function startServer(port, extensionDir) {
   // Use users from settings (already validated above)
   let users = sandboxSettings.users;
 
+  // If channels not initialized, add defaults
+  if (!sandboxSettings.channels || sandboxSettings.channels.length === 0) {
+    sandboxSettings.channels = [
+      { id: 'sandbox-channel', name: 'general' },
+      { id: 'sandbox-channel-2', name: 'dev' }
+    ];
+    persistSettings();
+    console.log('[Sandbox] Initialized default channels');
+  }
+
   // Ensure current user is set
   let currentUserId = sandboxSettings.currentUserId || 'sandbox-user-1';
 
@@ -124,6 +142,7 @@ export async function startServer(port, extensionDir) {
   const ctx = {
     workspaceId: 'sandbox-workspace',
     currentUserId,
+    _users: users,
     storage: {
       get: async (key) => {
         const logMsg = `[API] ctx.storage.get("${key}")`;
@@ -181,9 +200,14 @@ export async function startServer(port, extensionDir) {
         broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         const user = users.find(u => u.id === currentUserId);
         return user?.role || 'MEMBER';
+      },
+      getName: async (userId) => {
+        const user = users.find(u => u.id === userId);
+        return user?.name || null;
       }
     },
-    messages: {
+      messages: {
+      _messages: messages,
       sendMessage: async (channelId, content) => {
         const logMsg = `[API] ctx.messages.sendMessage("${channelId}", ${JSON.stringify(content)})`;
         console.log(`[Sandbox] ${logMsg}`);
@@ -212,6 +236,25 @@ export async function startServer(port, extensionDir) {
         for (const client of clients) {
           safeSseWrite(client, `data: ${JSON.stringify(msg)}\n\n`);
         }
+        return { messageId: msg.id };
+      },
+      editMessage: async (msgId, newContent) => {
+        const logMsg = `[API] ctx.messages.editMessage("${msgId}", ${JSON.stringify(newContent)})`;
+        console.log(`[Sandbox] ${logMsg}`);
+        broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
+        
+        const idx = messages.findIndex(m => m.id === msgId);
+        if (idx === -1) return false;
+        
+        messages[idx] = { ...messages[idx], content: newContent };
+        sandboxSettings.messages = messages.slice(-500);
+        persistSettings();
+        
+        const updated = { ...messages[idx], _edited: true };
+        for (const client of clients) {
+          safeSseWrite(client, `data: ${JSON.stringify({ type: 'message:edited', message: updated })}\n\n`);
+        }
+        return true;
       },
       sendDirectMessage: async (userId, content) => {
         const logMsg = `[API] ctx.messages.sendDirectMessage("${userId}", ${JSON.stringify(content)})`;
@@ -432,7 +475,7 @@ export async function startServer(port, extensionDir) {
 
           const event = {
             id: `msg-${Date.now()}`,
-            channelId: 'sandbox-channel',
+            channelId: data.channelId || 'sandbox-channel',
             workspaceId: 'sandbox-workspace',
             content: data.content,
             userId: data.userId,
@@ -559,6 +602,39 @@ export async function startServer(port, extensionDir) {
       return;
     }
 
+    // Edit message API (PATCH /api/messages/:messageId)
+    const messagesEditMatch = url.pathname.match(/^\/api\/messages\/([^/]+)$/);
+    if (messagesEditMatch && req.method === 'PATCH') {
+      const messageId = messagesEditMatch[1];
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', async () => {
+        try {
+          const { content } = JSON.parse(body);
+          const idx = messages.findIndex(m => m.id === messageId);
+          if (idx === -1) {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: 'Message not found' }));
+            return;
+          }
+          messages[idx] = { ...messages[idx], content };
+          sandboxSettings.messages = messages.slice(-500);
+          persistSettings();
+          
+          const updated = { ...messages[idx], _edited: true };
+          for (const client of clients) {
+            safeSseWrite(client, `data: ${JSON.stringify({ type: 'message:edited', message: updated })}\n\n`);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true }));
+        } catch (e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid JSON' }));
+        }
+      });
+      return;
+    }
+
     // Reactions API (POST /api/:channelId/:messageId/reactions)
     const reactionsMatch = url.pathname.match(/^\/api\/[^/]+\/([^/]+)\/reactions$/);
     if (reactionsMatch && req.method === 'POST') {
@@ -682,6 +758,103 @@ export async function startServer(port, extensionDir) {
       persistSettings();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    // Channels API - GET list
+    if (url.pathname === '/api/channels' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(channels));
+      return;
+    }
+
+    // Channels API - POST create
+    if (url.pathname === '/api/channels' && req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { name } = JSON.parse(body);
+          if (!name || !name.trim()) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'Channel name is required' }));
+            return;
+          }
+          const newChannel = {
+            id: `channel-${Date.now()}`,
+            name: name.trim().toLowerCase().replace(/\s+/g, '-')
+          };
+          channels.push(newChannel);
+          sandboxSettings.channels = channels;
+          persistSettings();
+          for (const client of clients) {
+            safeSseWrite(client, `data: ${JSON.stringify({ type: 'channels:updated', channels })}\n\n`);
+          }
+          res.writeHead(201, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(newChannel));
+        } catch(e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid request body' }));
+        }
+      });
+      return;
+    }
+
+    // Channels API - DELETE
+    if (url.pathname === '/api/channels' && req.method === 'DELETE') {
+      const id = url.searchParams.get('id');
+      if (!id) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Channel id is required' }));
+        return;
+      }
+      if (channels.length <= 1) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Cannot delete the last channel' }));
+        return;
+      }
+      channels = channels.filter(c => c.id !== id);
+      sandboxSettings.channels = channels;
+      persistSettings();
+      for (const client of clients) {
+        safeSseWrite(client, `data: ${JSON.stringify({ type: 'channels:updated', channels })}\n\n`);
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true }));
+      return;
+    }
+
+    // Channels API - PATCH (rename)
+    if (url.pathname === '/api/channels' && req.method === 'PATCH') {
+      let body = '';
+      req.on('data', chunk => { body += chunk; });
+      req.on('end', () => {
+        try {
+          const { id, name } = JSON.parse(body);
+          if (!id || !name || !name.trim()) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: 'Channel id and name are required' }));
+            return;
+          }
+          const idx = channels.findIndex(c => c.id === id);
+          if (idx === -1) {
+            res.writeHead(404);
+            res.end(JSON.stringify({ error: 'Channel not found' }));
+            return;
+          }
+          channels[idx] = { ...channels[idx], name: name.trim().toLowerCase().replace(/\s+/g, '-') };
+          sandboxSettings.channels = channels;
+          persistSettings();
+          for (const client of clients) {
+            safeSseWrite(client, `data: ${JSON.stringify({ type: 'channels:updated', channels })}\n\n`);
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(channels[idx]));
+        } catch(e) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: 'Invalid request body' }));
+        }
+      });
       return;
     }
 
