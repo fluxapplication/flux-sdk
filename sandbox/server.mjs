@@ -885,13 +885,13 @@ export async function startServer(port, extensionDir) {
     const triggerMatch = url.pathname.match(/^\/api\/scheduler\/trigger\/(.+)$/);
     if (triggerMatch && req.method === 'POST') {
       const jobKey = triggerMatch[1];
-      req.on('end', async () => {
-        const job = scheduledJobs.find(j => j.jobKey === jobKey);
-        if (!job) {
-          res.writeHead(404);
-          res.end(JSON.stringify({ error: `Job "${jobKey}" not found` }));
-          return;
-        }
+      const job = scheduledJobs.find(j => j.jobKey === jobKey);
+      if (!job) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: `Job "${jobKey}" not found` }));
+        return;
+      }
+      (async () => {
         try {
           console.log(`[Sandbox] Triggering job: ${jobKey}`);
           await Promise.resolve(job.handler());
@@ -903,7 +903,7 @@ export async function startServer(port, extensionDir) {
           res.writeHead(500);
           res.end(JSON.stringify({ error: e.message }));
         }
-      });
+      })();
       return;
     }
 
