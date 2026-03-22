@@ -139,6 +139,7 @@ export async function startServer(port, extensionDir) {
   // Mocked Context
   let messageHandler = null;
   let reactionHandler = null;
+  let configChangeHandler = null;
   console.log('[Sandbox] Setting up ctx with backend handlers');
   const ctx = {
     workspaceId: 'sandbox-workspace',
@@ -157,6 +158,9 @@ export async function startServer(port, extensionDir) {
         broadcastDebugLog({ type: 'log', args: [logMsg], source: 'backend' });
         storage.set(key, value); 
         persistStorage(); 
+        if (configChangeHandler) {
+          configChangeHandler(key);
+        }
       },
       delete: async (key) => { 
         const logMsg = `[API] ctx.storage.delete("${key}")`;
@@ -358,6 +362,9 @@ export async function startServer(port, extensionDir) {
         reactionHandler = handler;
       },
       onWebhook: () => {},
+      onConfigChange: (handler) => {
+        configChangeHandler = handler;
+      },
       schedule: (jobKey, cron, handler) => {
         scheduledJobs.length = 0; // clear all jobs on re-register (one job per extension for now)
         scheduledJobs.push({ jobKey, cron, handler, extensionSlug: manifest.slug, lastRun: null });

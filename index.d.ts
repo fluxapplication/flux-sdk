@@ -132,6 +132,8 @@ export interface BackendContext {
   onReaction(handler: ReactionHandler): void;
   /** Register webhook handler. */
   onWebhook(handler: WebhookHandler): void;
+  /** Called when extension storage is updated via ctx.storage.set(). */
+  onConfigChange(handler: (key: string) => void): void;
   /** Schedule recurring tasks. */
   schedule(jobKey: string, cron: string, handler: () => Promise<void>): void;
   /** Cancel scheduled task. */
