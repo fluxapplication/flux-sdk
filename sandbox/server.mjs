@@ -5,6 +5,134 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// ─── Simple Cron Scheduler (sandbox only) ───────────────────────────────────
+
+function parseCron(cronStr) {
+  const parts = cronStr.trim().split(/\s+/);
+  if (parts.length !== 5) return null;
+  return {
+    minute: parts[0],
+    hour: parts[1],
+    dayOfWeek: parts[4],
+  };
+}
+
+function parseField(field, min, max) {
+  if (field === '*') return null;
+  const values = new Set();
+  const parts = field.split(',');
+  for (const part of parts) {
+    if (part.includes('-')) {
+      const [start, end] = part.split('-').map(Number);
+      for (let i = start; i <= end; i++) values.add(i);
+    } else if (part.includes('/')) {
+      const [base, step] = part.split('/').map(Number);
+      for (let i = base; i <= max; i += step) values.add(i);
+    } else {
+      values.add(Number(part));
+    }
+  }
+  return values.size > 0 ? values : null;
+}
+
+function getDaysOfWeek(cronDays) {
+  if (cronDays === '*') return [0, 1, 2, 3, 4, 5, 6];
+  return parseField(cronDays, 0, 6);
+}
+
+function getNextRunMs(cronStr) {
+  const parsed = parseCron(cronStr);
+  if (!parsed) return null;
+
+  const allowedDays = getDaysOfWeek(parsed.dayOfWeek);
+  const allowedMinutes = parseField(parsed.minute, 0, 59);
+  const allowedHours = parseField(parsed.hour, 0, 23);
+
+  const now = new Date();
+  const currentMinute = now.getMinutes();
+  const currentHour = now.getHours();
+  const currentDay = now.getDay();
+
+  // Check today
+  if (allowedDays.includes(currentDay)) {
+    if (allowedHours === null || allowedHours.has(currentHour)) {
+      const targetMinute = allowedMinutes ? Math.min(...allowedMinutes) : currentMinute;
+      const targetHour = allowedHours ? Math.min(...allowedHours) : currentHour;
+      
+      let target = new Date(now);
+      target.setHours(targetHour, targetMinute, 0, 0);
+      
+      if (target > now) {
+        return target.getTime() - now.getTime();
+      }
+    }
+  }
+
+  // Find next occurrence
+  for (let offset = 1; offset <= 7; offset++) {
+    const checkDate = new Date(now);
+    checkDate.setDate(now.getDate() + offset);
+    const day = checkDate.getDay();
+
+    if (allowedDays.includes(day)) {
+      const hour = allowedHours ? Math.min(...allowedHours) : 0;
+      const minute = allowedMinutes ? Math.min(...allowedMinutes) : 0;
+      
+      checkDate.setHours(hour, minute, 0, 0);
+      return checkDate.getTime() - now.getTime();
+    }
+  }
+
+  return null;
+}
+
+class CronScheduler {
+  constructor() {
+    this.jobs = new Map();
+  }
+
+  schedule(jobKey, cronStr, handler) {
+    this.cancel(jobKey);
+
+    const intervalMs = getNextRunMs(cronStr);
+    if (intervalMs === null) {
+      console.log(`[Sandbox Cron] Invalid cron or no next run: ${cronStr}`);
+      return;
+    }
+
+    const runAndReschedule = () => {
+      console.log(`[Sandbox Cron] Triggered: ${jobKey}`);
+      handler()
+        .catch(err => console.error(`[Sandbox Cron] Error in ${jobKey}:`, err));
+
+      const nextMs = getNextRunMs(cronStr);
+      if (nextMs !== null) {
+        this.jobs.set(jobKey, setTimeout(runAndReschedule, nextMs));
+        console.log(`[Sandbox Cron] Next run in ${Math.round(nextMs / 1000)}s`);
+      }
+    };
+
+    const timeoutId = setTimeout(runAndReschedule, intervalMs);
+    this.jobs.set(jobKey, timeoutId);
+    console.log(`[Sandbox Cron] Scheduled ${jobKey}: next in ${Math.round(intervalMs / 1000)}s`);
+  }
+
+  cancel(jobKey) {
+    const existing = this.jobs.get(jobKey);
+    if (existing) {
+      clearTimeout(existing);
+      this.jobs.delete(jobKey);
+    }
+  }
+
+  stopAll() {
+    for (const timeoutId of this.jobs.values()) {
+      clearTimeout(timeoutId);
+    }
+    this.jobs.clear();
+  }
+}
+
 export async function startServer(port, extensionDir) {
   // Check manifest
   const manifestPath = path.join(extensionDir, 'manifest.json');
@@ -68,8 +196,9 @@ export async function startServer(port, extensionDir) {
   };
 
   const clients = new Set(); // For SSE to the UI
-  const scheduledJobs = []; // { jobKey, cron, handler, extensionSlug, lastRun }
   const debugClients = new Set(); // For debug log SSE
+  const cronScheduler = new CronScheduler();
+  const scheduledJobs = []; // { jobKey, cron, extensionSlug, lastRun } - metadata only
   const messages = sandboxSettings.messages; // Use persisted messages
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
   const reactions = []; // In-memory reactions storage
@@ -366,15 +495,27 @@ export async function startServer(port, extensionDir) {
         configChangeHandler = handler;
       },
       schedule: (jobKey, cron, handler) => {
-        scheduledJobs.length = 0; // clear all jobs on re-register (one job per extension for now)
-        scheduledJobs.push({ jobKey, cron, handler, extensionSlug: manifest.slug, lastRun: null });
-        console.log(`[Sandbox] Scheduled job: ${jobKey} (${cron})`);
+        // Remove old metadata entry if exists
+        const existingIdx = scheduledJobs.findIndex(j => j.jobKey === jobKey);
+        if (existingIdx !== -1) {
+          scheduledJobs.splice(existingIdx, 1);
+        }
+
+        // Schedule with our simple cron scheduler
+        cronScheduler.schedule(jobKey, cron, async () => {
+          await Promise.resolve(handler());
+          const job = scheduledJobs.find(j => j.jobKey === jobKey);
+          if (job) job.lastRun = new Date().toISOString();
+        });
+
+        // Add metadata for UI
+        scheduledJobs.push({ jobKey, cron, extensionSlug: manifest.slug, lastRun: null });
       },
       cancelSchedule: (jobKey) => {
+        cronScheduler.cancel(jobKey);
         const idx = scheduledJobs.findIndex(j => j.jobKey === jobKey);
         if (idx !== -1) {
           scheduledJobs.splice(idx, 1);
-          console.log(`[Sandbox] Cancelled job: ${jobKey}`);
         }
       },
     }
