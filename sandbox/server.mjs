@@ -68,6 +68,7 @@ export async function startServer(port, extensionDir) {
   };
 
   const clients = new Set(); // For SSE to the UI
+  const scheduledJobs = []; // { jobKey, cron, handler, extensionSlug, lastRun }
   const debugClients = new Set(); // For debug log SSE
   const messages = sandboxSettings.messages; // Use persisted messages
   const directMessages = sandboxSettings.directMessages || []; // Use persisted DMs
@@ -357,8 +358,18 @@ export async function startServer(port, extensionDir) {
         reactionHandler = handler;
       },
       onWebhook: () => {},
-      schedule: () => {},
-      cancelSchedule: () => {},
+      schedule: (jobKey, cron, handler) => {
+        scheduledJobs.length = 0; // clear all jobs on re-register (one job per extension for now)
+        scheduledJobs.push({ jobKey, cron, handler, extensionSlug: manifest.slug, lastRun: null });
+        console.log(`[Sandbox] Scheduled job: ${jobKey} (${cron})`);
+      },
+      cancelSchedule: (jobKey) => {
+        const idx = scheduledJobs.findIndex(j => j.jobKey === jobKey);
+        if (idx !== -1) {
+          scheduledJobs.splice(idx, 1);
+          console.log(`[Sandbox] Cancelled job: ${jobKey}`);
+        }
+      },
     }
   };
 
@@ -854,6 +865,43 @@ export async function startServer(port, extensionDir) {
           res.end(JSON.stringify({ error: 'Invalid request body' }));
         }
       });
+      return;
+    }
+
+    // Scheduler Jobs API - GET list of scheduled jobs
+    if (url.pathname === '/api/scheduler/jobs' && req.method === 'GET') {
+      const jobsWithoutHandlers = scheduledJobs.map(j => ({
+        jobKey: j.jobKey,
+        cron: j.cron,
+        extensionSlug: j.extensionSlug,
+        lastRun: j.lastRun
+      }));
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(jobsWithoutHandlers));
+      return;
+    }
+
+    // Scheduler API - POST trigger a job by key
+    const triggerMatch = url.pathname.match(/^\/api\/scheduler\/trigger\/(.+)$/);
+    if (triggerMatch && req.method === 'POST') {
+      const jobKey = triggerMatch[1];
+      const job = scheduledJobs.find(j => j.jobKey === jobKey);
+      if (!job) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: `Job "${jobKey}" not found` }));
+        return;
+      }
+      try {
+        console.log(`[Sandbox] Triggering job: ${jobKey}`);
+        await job.handler();
+        job.lastRun = new Date().toISOString();
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, lastRun: job.lastRun }));
+      } catch(e) {
+        console.error(`[Sandbox] Job "${jobKey}" error:`, e);
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: e.message }));
+      }
       return;
     }
 

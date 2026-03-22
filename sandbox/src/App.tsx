@@ -5,7 +5,7 @@ import * as lucideReact from 'lucide-react'
 import { useState, useEffect, useRef } from 'react'
 import { ToastContainer, addToast } from './components/Toast'
 import { Icons } from './components/Icons'
-import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab, ChannelsTab } from './components'
+import { ChatTab, AppUITab, SettingsTab, StorageTab, UsersTab, DMsTab, DebugTab, ChannelsTab, JobsTab } from './components'
 import { api, User, Message, Reaction, DirectMessage } from './components/api'
 
 function resolveMentions(content: string, users: User[]) {
@@ -588,6 +588,12 @@ export default function App() {
             onClick={() => setActiveTab('dms')} 
           />
           <NavItem 
+            icon={<Icons.Calendar />} 
+            label="Jobs" 
+            active={activeTab === 'jobs'} 
+            onClick={() => setActiveTab('jobs')} 
+          />
+          <NavItem 
             icon={<Icons.Terminal />} 
             label="Debug" 
             active={activeTab === 'debug'} 
@@ -656,6 +662,10 @@ export default function App() {
             directMessages={directMessages}
             users={users}
           />
+        )}
+
+        {activeTab === 'jobs' && (
+          <JobsTab />
         )}
         
         {activeTab === 'debug' && (

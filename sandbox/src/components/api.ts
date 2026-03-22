@@ -161,6 +161,19 @@ export const api = {
     }
   },
 
+  scheduler: {
+    listJobs: async (): Promise<{ jobKey: string; cron: string; extensionSlug: string; lastRun: string | null }[]> => {
+      const res = await fetch('/api/scheduler/jobs')
+      return res.json()
+    },
+    triggerJob: async (jobKey: string): Promise<{ success: boolean; lastRun: string }> => {
+      const res = await fetch(`/api/scheduler/trigger/${encodeURIComponent(jobKey)}`, {
+        method: 'POST'
+      })
+      return res.json()
+    }
+  },
+
   events: {
     subscribe: (handler: (data: unknown) => void): (() => void) => {
       const eventSource = new EventSource('/api/events')
