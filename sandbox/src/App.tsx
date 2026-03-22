@@ -124,6 +124,7 @@ export default function App() {
   
   const messageHandlersRef = useRef<Array<(msg: { id: string; content: string; userId: string; channelId: string; workspaceId: string }) => Promise<void> | void>>([])
   const reactionHandlersRef = useRef<Array<(event: { type: 'reaction:added' | 'reaction:removed'; channelId: string; messageId: string; reaction: Reaction; recipientUserId: string; actorId: string }) => Promise<void> | void>>([])
+  const storageRef = useRef<Record<string, unknown>>({})
 
   useEffect(() => {
     
@@ -169,18 +170,21 @@ export default function App() {
           workspaceId: 'sandbox-workspace',
           currentUserId: currentUserId,
           storage: {
-            get: async (key: string) => storage[key],
+            get: async (key: string) => storageRef.current[key],
             set: async (key: string, value: unknown) => {
-              const newStorage = { ...storage, [key]: value }
-              setStorage(newStorage)
+              storageRef.current[key] = value
+              setStorage(prev => ({ ...prev, [key]: value }))
               await api.storage.set(key, value)
             },
             delete: async (key: string) => {
-              const newStorage = { ...storage }
-              delete newStorage[key]
-              setStorage(newStorage)
+              delete storageRef.current[key]
+              setStorage(prev => {
+                const newStorage = { ...prev }
+                delete newStorage[key]
+                return newStorage
+              })
             },
-            listKeys: async () => Object.keys(storage)
+            listKeys: async () => Object.keys(storageRef.current)
           },
           ai: {
             complete: async () => '[Mock AI response]'
@@ -336,7 +340,10 @@ export default function App() {
 
   useEffect(() => {
     api.storage.getAll()
-      .then(data => setStorage(data))
+      .then(data => {
+        setStorage(data)
+        storageRef.current = data
+      })
   }, [])
 
   useEffect(() => {
