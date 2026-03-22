@@ -685,6 +685,9 @@ export async function startServer(port, extensionDir) {
         const { key, value } = JSON.parse(body);
         storage.set(key, value);
         persistStorage();
+        if (configChangeHandler) {
+          configChangeHandler(key);
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       });
