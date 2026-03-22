@@ -121,6 +121,9 @@ export default function App() {
   
   const uiMountRef = useRef<HTMLDivElement>(null)
   const settingsMountRef = useRef<HTMLDivElement>(null)
+  
+  const messageHandlersRef = useRef<Array<(msg: { id: string; content: string; userId: string; channelId: string; workspaceId: string }) => Promise<void> | void>>([])
+  const reactionHandlersRef = useRef<Array<(event: { type: 'reaction:added' | 'reaction:removed'; channelId: string; messageId: string; reaction: Reaction; recipientUserId: string; actorId: string }) => Promise<void> | void>>([])
 
   useEffect(() => {
     
@@ -253,6 +256,14 @@ export default function App() {
               if (settingsMountRef.current) {
                 window.ReactDOM.createRoot(settingsMountRef.current).render(element)
               }
+            }
+          },
+          backend: {
+            onMessage: (handler: (msg: { id: string; content: string; userId: string; channelId: string; workspaceId: string }) => Promise<void> | void) => {
+              messageHandlersRef.current.push(handler)
+            },
+            onReaction: (handler: (event: { type: 'reaction:added' | 'reaction:removed'; channelId: string; messageId: string; reaction: Reaction; recipientUserId: string; actorId: string }) => Promise<void> | void) => {
+              reactionHandlersRef.current.push(handler)
             }
           }
         }
@@ -404,8 +415,31 @@ export default function App() {
           }
           return m
         }))
+        for (const handler of reactionHandlersRef.current) {
+          const msg = messages.find(m => m.id === eventData.messageId)
+          if (msg && eventData.reaction) {
+            handler({
+              type: eventData.type as 'reaction:added' | 'reaction:removed',
+              channelId: eventData.channelId || msg.channelId || 'sandbox-channel',
+              messageId: eventData.messageId,
+              reaction: eventData.reaction,
+              recipientUserId: msg.userId,
+              actorId: eventData.reaction.userId
+            })
+          }
+        }
       } else if (!eventData.type) {
-        setMessages(prev => [...prev, eventData as Message])
+        const newMsg = eventData as Message
+        setMessages(prev => [...prev, newMsg])
+        for (const handler of messageHandlersRef.current) {
+          handler({
+            id: newMsg.id,
+            content: newMsg.content,
+            userId: newMsg.userId,
+            channelId: newMsg.channelId || 'sandbox-channel',
+            workspaceId: 'sandbox-workspace'
+          })
+        }
       }
     })
     return unsubscribe
