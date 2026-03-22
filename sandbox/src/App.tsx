@@ -202,7 +202,7 @@ export default function App() {
                 content,
                 channelId,
                 userId: 'ext-bot',
-                user: { id: 'ext-bot', name: extensionName },
+                user: { id: 'ext-bot', name: extensionName, isBot: true },
                 createdAt: new Date().toISOString(),
                 reactions: []
               }

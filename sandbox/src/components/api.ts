@@ -8,7 +8,7 @@ export interface Message {
   id: string
   content: string
   userId: string
-  user: { id: string; name: string }
+  user: { id: string; name: string; isBot?: boolean }
   createdAt: string
   reactions?: Reaction[]
   channelId?: string
