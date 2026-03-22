@@ -121,7 +121,7 @@ export function Message({ message, onReaction, users, messageRenderers = [], cur
       >
         <div className="text-[11px] text-zinc-500 mb-1 font-semibold">{message.user.name}</div>
         {RendererComponent && currentUserId ? (
-          <RendererComponent message={message} ctx={window.__ctx__} currentUserId={currentUserId} onSendMessage={onSendMessage} onEditMessage={onEditMessage} />
+          <RendererComponent message={{ id: message.id, content: message.content, channelId: message.channelId || 'sandbox-channel' }} ctx={window.__ctx__} currentUserId={currentUserId} />
         ) : (
           <div className="text-sm leading-relaxed whitespace-pre-wrap break-words">
             {renderContentWithMentions(message.content, users)}

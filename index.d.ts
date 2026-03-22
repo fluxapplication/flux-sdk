@@ -195,11 +195,9 @@ export interface ExtensionPanelProps {
 }
 
 export interface MessageRendererProps {
-  message: { id: string; content: string };
+  message: { id: string; content: string; channelId: string };
   ctx: ExtensionContext;
   currentUserId: string;
-  onSendMessage?: (content: string) => Promise<void>;
-  onEditMessage?: (messageId: string, content: string) => Promise<void>;
 }
 
 export interface RendererEntry {
