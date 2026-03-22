@@ -170,7 +170,11 @@ export default function App() {
           workspaceId: 'sandbox-workspace',
           currentUserId: currentUserId,
           storage: {
-            get: async (key: string) => storageRef.current[key],
+            get: async (key: string) => {
+              const res = await fetch(`/api/storage?key=${encodeURIComponent(key)}`)
+              const data = await res.json()
+              return data.value
+            },
             set: async (key: string, value: unknown) => {
               storageRef.current[key] = value
               setStorage(prev => ({ ...prev, [key]: value }))
