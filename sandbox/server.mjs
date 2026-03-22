@@ -885,23 +885,25 @@ export async function startServer(port, extensionDir) {
     const triggerMatch = url.pathname.match(/^\/api\/scheduler\/trigger\/(.+)$/);
     if (triggerMatch && req.method === 'POST') {
       const jobKey = triggerMatch[1];
-      const job = scheduledJobs.find(j => j.jobKey === jobKey);
-      if (!job) {
-        res.writeHead(404);
-        res.end(JSON.stringify({ error: `Job "${jobKey}" not found` }));
-        return;
-      }
-      try {
-        console.log(`[Sandbox] Triggering job: ${jobKey}`);
-        await job.handler();
-        job.lastRun = new Date().toISOString();
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ success: true, lastRun: job.lastRun }));
-      } catch(e) {
-        console.error(`[Sandbox] Job "${jobKey}" error:`, e);
-        res.writeHead(500);
-        res.end(JSON.stringify({ error: e.message }));
-      }
+      req.on('end', async () => {
+        const job = scheduledJobs.find(j => j.jobKey === jobKey);
+        if (!job) {
+          res.writeHead(404);
+          res.end(JSON.stringify({ error: `Job "${jobKey}" not found` }));
+          return;
+        }
+        try {
+          console.log(`[Sandbox] Triggering job: ${jobKey}`);
+          await Promise.resolve(job.handler());
+          job.lastRun = new Date().toISOString();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, lastRun: job.lastRun }));
+        } catch(e) {
+          console.error(`[Sandbox] Job "${jobKey}" error:`, e);
+          res.writeHead(500);
+          res.end(JSON.stringify({ error: e.message }));
+        }
+      });
       return;
     }
 
