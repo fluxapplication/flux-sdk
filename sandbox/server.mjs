@@ -495,11 +495,14 @@ export async function startServer(port, extensionDir) {
         configChangeHandler = handler;
       },
       schedule: (jobKey, cron, handler) => {
-        // Remove old metadata entry if exists
+        // Remove old entry if exists
         const existingIdx = scheduledJobs.findIndex(j => j.jobKey === jobKey);
         if (existingIdx !== -1) {
           scheduledJobs.splice(existingIdx, 1);
         }
+
+        // Store handler for manual trigger (trigger API needs it)
+        scheduledJobs.push({ jobKey, cron, handler, extensionSlug: manifest.slug, lastRun: null });
 
         // Schedule with our simple cron scheduler
         cronScheduler.schedule(jobKey, cron, async () => {
@@ -507,9 +510,6 @@ export async function startServer(port, extensionDir) {
           const job = scheduledJobs.find(j => j.jobKey === jobKey);
           if (job) job.lastRun = new Date().toISOString();
         });
-
-        // Add metadata for UI
-        scheduledJobs.push({ jobKey, cron, extensionSlug: manifest.slug, lastRun: null });
       },
       cancelSchedule: (jobKey) => {
         cronScheduler.cancel(jobKey);
