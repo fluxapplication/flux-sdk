@@ -79,6 +79,18 @@ const iconSrc = join(dir, "icon.png")
 const iconDest = join(distDir, "icon.png")
 const extensionCssFile = join(dir, "extension.css")
 
+const STATIC_DIR_NAMES = ["sprites", "assets", "public", "static"]
+
+function copyStaticAssetsToDist() {
+  for (const dirName of STATIC_DIR_NAMES) {
+    const sourcePath = join(dir, dirName)
+    if (!existsSync(sourcePath)) continue
+    const destinationPath = join(distDir, dirName)
+    cpSync(sourcePath, destinationPath, { recursive: true, force: true })
+    console.log(`  ✓ dist/${dirName}/`)
+  }
+}
+
 console.log(`\n◆ Building ${name}…`)
 
 const entryParts = []
@@ -163,13 +175,18 @@ async function run() {
     console.log("  ✓ icon.png (generated)")
   }
 
+  copyStaticAssetsToDist()
+
   if (doPack) {
     const zipFile = join(distDir, "bundle.zip")
     if (existsSync(zipFile)) rmSync(zipFile)
     const hasBackend = existsSync(backendFile)
     const hasCss = existsSync(join(distDir, "bundle.css"))
-    const files = ["bundle.js", hasBackend && "backend.js", hasCss && "bundle.css", "manifest.json", "icon.png"].filter(Boolean).join(" ")
-    execSync(`zip -j bundle.zip ${files}`, { cwd: distDir })
+    const staticDirs = STATIC_DIR_NAMES.filter((dirName) => existsSync(join(distDir, dirName)))
+    const entries = ["bundle.js", hasBackend && "backend.js", hasCss && "bundle.css", "manifest.json", "icon.png", ...staticDirs]
+      .filter(Boolean)
+      .join(" ")
+    execSync(`zip -r bundle.zip ${entries}`, { cwd: distDir })
     const kb = (readFileSync(zipFile).byteLength / 1024).toFixed(1)
     console.log(`  ✓ bundle.zip (${kb} KB)`)
   }

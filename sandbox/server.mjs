@@ -5,6 +5,37 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function getContentType(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  const contentTypes = {
+    '.js': 'application/javascript',
+    '.css': 'text/css',
+    '.html': 'text/html',
+    '.json': 'application/json',
+    '.map': 'application/json',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.ico': 'image/x-icon',
+    '.woff': 'font/woff',
+    '.woff2': 'font/woff2',
+    '.ttf': 'font/ttf',
+  };
+  return contentTypes[ext] || 'application/octet-stream';
+}
+
+function safeResolveUnder(baseDir, relativePath) {
+  const resolved = path.resolve(baseDir, relativePath);
+  const normalizedBase = path.resolve(baseDir) + path.sep;
+  if (!resolved.startsWith(normalizedBase)) {
+    return null;
+  }
+  return resolved;
+}
+
 // ─── Simple Cron Scheduler (sandbox only) ───────────────────────────────────
 
 function parseCron(cronStr) {
@@ -1125,19 +1156,24 @@ export async function startServer(port, extensionDir) {
 
     // Serve Vite build assets (React app)
     const distDir = path.join(__dirname, 'dist');
+    const extensionPrefix = `/extensions/${manifest.slug}/`;
+    if (url.pathname.startsWith(extensionPrefix)) {
+      const relative = url.pathname.slice(extensionPrefix.length);
+      const sourcePath = safeResolveUnder(extensionDir, relative);
+      if (sourcePath && fs.existsSync(sourcePath) && fs.statSync(sourcePath).isFile()) {
+        res.writeHead(200, { 'Content-Type': getContentType(sourcePath) });
+        fs.createReadStream(sourcePath).pipe(res);
+      } else {
+        res.writeHead(404);
+        res.end('Not found');
+      }
+      return;
+    }
+
     if (url.pathname.startsWith('/assets/')) {
       const assetPath = path.join(distDir, url.pathname);
       if (fs.existsSync(assetPath)) {
-        const ext = path.extname(assetPath);
-        const contentTypes = {
-          '.js': 'application/javascript',
-          '.css': 'text/css',
-          '.html': 'text/html',
-          '.map': 'application/json',
-          '.woff': 'font/woff',
-          '.woff2': 'font/woff2',
-        };
-        res.writeHead(200, { 'Content-Type': contentTypes[ext] || 'application/octet-stream' });
+        res.writeHead(200, { 'Content-Type': getContentType(assetPath) });
         fs.createReadStream(assetPath).pipe(res);
       } else {
         res.writeHead(404);
