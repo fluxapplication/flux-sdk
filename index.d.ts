@@ -17,7 +17,8 @@ export type ExtensionPermission =
   | "storage.write"
   | "scheduler"
   | "ai.access"
-  | "webhooks";
+  | "webhooks"
+  | "network.fetch";
 
 // ─── Core Types ─────────────────────────────────────────────────────────────
 
